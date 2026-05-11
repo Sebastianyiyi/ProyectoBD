@@ -30,7 +30,7 @@ export default function Sidebar() {
       {/* Logo */}
       <div className="px-6 py-5 border-b">
         <h1 className="text-lg font-semibold tracking-tight text-sidebar-foreground">
-          FISEI-PRÉSTAMOS
+          FISEI - PRÉSTAMOS
         </h1>
         <p className="text-xs text-muted-foreground mt-0.5">Gestión de Inventario</p>
       </div>
