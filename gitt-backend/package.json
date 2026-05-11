@@ -30,6 +30,7 @@
     "class-transformer": "^0.5.1",
     "class-validator": "^0.15.1",
     "jwks-rsa": "^4.0.1",
+    "jwt-decode": "^4.0.0",
     "passport": "^0.7.0",
     "passport-azure-ad": "^4.3.5",
     "passport-jwt": "^4.0.1",
