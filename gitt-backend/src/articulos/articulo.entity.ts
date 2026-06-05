@@ -29,7 +29,7 @@ export class Articulo {
   @Column({ type: 'date', nullable: true })
   fecha_adquisicion!: string | null;
 
-  @Column({ type: 'numeric', precision: 12, scale: 2, nullable: true })
+  @Column({ type: 'numeric', nullable: true })
   valor!: number | null;
 
   @Column({ type: 'int' })

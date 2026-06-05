@@ -12,6 +12,7 @@ import { CatalogosModule } from './catalogos/catalogos.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { PrestamosModule } from './prestamos/prestamos.module';
 import { MantenimientosModule } from './mantenimientos/mantenimientos.module';
+import { InventarioModule } from './inventario/inventario.module';
 
 @Module({
   imports: [
@@ -40,6 +41,7 @@ import { MantenimientosModule } from './mantenimientos/mantenimientos.module';
     DashboardModule,
     PrestamosModule,
     MantenimientosModule,
+    InventarioModule,
   ],
   controllers: [AppController],
   providers: [AppService],
