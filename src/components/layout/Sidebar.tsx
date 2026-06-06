@@ -8,6 +8,8 @@ import {
   Users,
   BarChart2,
   LogOut,
+  ArrowLeftRight,
+  ShieldCheck,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/store/authStore'
@@ -17,8 +19,10 @@ const navItems = [
   { to: '/inventario',     label: 'Inventario',       icon: Monitor },
   { to: '/prestamos',      label: 'Préstamos',        icon: BookOpen },
   { to: '/mantenimientos', label: 'Mantenimientos',   icon: Wrench },
+  { to: '/movimientos',    label: 'Movimientos',      icon: ArrowLeftRight },
   { to: '/ubicaciones',    label: 'Ubicaciones',      icon: MapPin },
   { to: '/usuarios',       label: 'Usuarios',         icon: Users },
+  { to: '/auditoria',      label: 'Auditoría',        icon: ShieldCheck },
   { to: '/reportes',       label: 'Reportes',         icon: BarChart2 },
 ]
 
@@ -30,13 +34,13 @@ export default function Sidebar() {
       {/* Logo */}
       <div className="px-6 py-5 border-b">
         <h1 className="text-lg font-semibold tracking-tight text-sidebar-foreground">
-          FISEI - PRÉSTAMOS
+          FISEI · INVENTARIO
         </h1>
-        <p className="text-xs text-muted-foreground mt-0.5">Gestión de Inventario</p>
+        <p className="text-xs text-muted-foreground mt-0.5">Sistema de Gestión Tecnológica</p>
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 px-3 py-4 space-y-1">
+      <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
         {navItems.map(({ to, label, icon: Icon }) => (
           <NavLink
             key={to}

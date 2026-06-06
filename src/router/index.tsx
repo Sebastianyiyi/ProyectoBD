@@ -8,6 +8,8 @@ import MantenimientosPage from '@/pages/mantenimientos/MantenimientosPage'
 import UbicacionesPage from '@/pages/ubicaciones/UbicacionesPage'
 import UsuariosPage from '@/pages/usuarios/UsuariosPage'
 import ReportesPage from '@/pages/reportes/ReportesPage'
+import MovimientosPage from '@/pages/movimientos/MovimientosPage'
+import AuditoriaPage from '@/pages/auditoria/AuditoriaPage'
 import LoginPage from '@/pages/auth/LoginPage'
 
 export default function AppRouter() {
@@ -25,11 +27,12 @@ export default function AppRouter() {
             <Route path="mantenimientos" element={<MantenimientosPage />} />
             <Route path="ubicaciones" element={<UbicacionesPage />} />
             <Route path="usuarios" element={<UsuariosPage />} />
+            <Route path="movimientos" element={<MovimientosPage />} />
+            <Route path="auditoria" element={<AuditoriaPage />} />
             <Route path="reportes" element={<ReportesPage />} />
           </Route>
         </Route>
 
-        {/* Ya NO redirigir todo a /login — dejar que ProtectedRoute decida */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>

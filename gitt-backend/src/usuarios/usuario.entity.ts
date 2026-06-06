@@ -17,11 +17,11 @@ export class Usuario {
   @Column({ length: 120 })
   correo: string;
 
-  @Column({ length: 15, nullable: true })
-  telefono: string;
+  @Column({ type: 'varchar', length: 15, nullable: true })
+  telefono: string | null;
 
-  @Column({ length: 255, nullable: true })
-  contrasena_hash: string;
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  contrasena_hash: string | null;
 
   @Column({ type: 'date' })
   fecha_registro: string;

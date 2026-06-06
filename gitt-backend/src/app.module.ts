@@ -13,6 +13,11 @@ import { DashboardModule } from './dashboard/dashboard.module';
 import { PrestamosModule } from './prestamos/prestamos.module';
 import { MantenimientosModule } from './mantenimientos/mantenimientos.module';
 import { InventarioModule } from './inventario/inventario.module';
+import { UbicacionesModule } from './ubicaciones/ubicaciones.module';
+import { MovimientosModule } from './movimientos/movimientos.module';
+import { NotificacionesModule } from './notificaciones/notificaciones.module';
+import { AuditoriaModule } from './auditoria/auditoria.module';
+import { ReportesModule } from './reportes/reportes.module';
 
 @Module({
   imports: [
@@ -42,6 +47,11 @@ import { InventarioModule } from './inventario/inventario.module';
     PrestamosModule,
     MantenimientosModule,
     InventarioModule,
+    UbicacionesModule,
+    MovimientosModule,
+    NotificacionesModule,
+    AuditoriaModule,
+    ReportesModule,
   ],
   controllers: [AppController],
   providers: [AppService],
