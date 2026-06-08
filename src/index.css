@@ -58,11 +58,44 @@
   --fisei-red-700: #99182a;
   --fisei-red-900: #5e0d18;
 
-  --app-bg: #ffffff;
+  --app-bg: #fdfaf7;
   --app-surface: #ffffff;
   --app-text: #171717;
   --app-text-soft: #6b7280;
   --app-border: #f3c7cf;
+
+  /* Shadcn UI Base Variables (FISEI Red Theme) */
+  --background: oklch(0.99 0.01 15);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.48 0.17 25);
+  /* #be1e34 approx */
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.96 0.02 15);
+  --secondary-foreground: oklch(0.48 0.17 25);
+  --muted: oklch(0.96 0.02 15);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.96 0.03 15);
+  --accent-foreground: oklch(0.48 0.17 25);
+  --destructive: oklch(0.577 0.245 27.325);
+  --destructive-foreground: oklch(0.577 0.245 27.325);
+  --border: oklch(0.92 0.02 15);
+  --input: oklch(0.92 0.02 15);
+  --ring: oklch(0.48 0.17 25);
+
+  --sidebar: #ffffff;
+  --sidebar-foreground: #171717;
+  --sidebar-primary: #be1e34;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #fff1f3;
+  --sidebar-accent-foreground: #be1e34;
+  --sidebar-border: #e5e7eb;
+  --sidebar-ring: #ffcdd5;
+
+  --radius: 0.75rem;
 }
 
 .dark {
@@ -254,35 +287,37 @@ body {
 [data-slot="sidebar"],
 [data-slot="sidebar-inner"],
 aside {
-  background: #fffdfa !important;
-  border-color: #f3dfe3 !important;
+  background: var(--sidebar) !important;
+  border-color: var(--sidebar-border) !important;
+  color: var(--sidebar-foreground) !important;
 }
 
 [data-slot="sidebar-header"],
 [data-slot="sidebar-footer"] {
-  border-color: #f3dfe3 !important;
+  border-color: var(--sidebar-border) !important;
 }
 
 [data-slot="sidebar-menu-button"] {
   border-radius: 14px;
-  color: #3a1f24 !important;
+  color: var(--sidebar-foreground) !important;
 }
 
 [data-slot="sidebar-menu-button"]:hover {
-  background: #fff3f5 !important;
-  color: #99182a !important;
+  background: var(--sidebar-accent) !important;
+  color: var(--sidebar-accent-foreground) !important;
 }
 
 [data-slot="sidebar-menu-button"][data-active="true"],
 [data-slot="sidebar-menu-button"].bg-accent {
-  background: #fff1f3 !important;
-  color: #99182a !important;
-  border: 1px solid #f6d7dd !important;
+  background: var(--sidebar-accent) !important;
+  color: var(--sidebar-accent-foreground) !important;
+  border: 1px solid var(--sidebar-ring) !important;
 }
 
 [data-slot="sidebar-group-label"],
 [data-slot="sidebar-label"] {
-  color: #a24857 !important;
+  color: var(--sidebar-accent-foreground) !important;
+  opacity: 0.8;
 }
 
 main,
