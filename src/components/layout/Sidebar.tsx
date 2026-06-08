@@ -13,6 +13,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/store/authStore'
+import { useMsal } from '@azure/msal-react'
 
 const navItems = [
   { to: '/dashboard',      label: 'Dashboard',       icon: LayoutDashboard },
@@ -27,6 +28,16 @@ const navItems = [
 
 export default function Sidebar() {
   const clearAuth = useAuthStore((s) => s.clearAuth)
+  const { instance, accounts } = useMsal()
+
+  const handleLogout = () => {
+    clearAuth()
+    if (accounts.length > 0) {
+      instance.logoutRedirect().catch(console.error)
+    } else {
+      window.location.href = '/login'
+    }
+  }
 
   return (
     <aside className="w-64 flex flex-col border-r bg-sidebar h-full">
@@ -62,7 +73,7 @@ export default function Sidebar() {
       {/* Logout */}
       <div className="px-3 py-4 border-t">
         <button
-          onClick={clearAuth}
+          onClick={handleLogout}
           className="flex items-center gap-3 px-3 py-2 rounded-md text-sm w-full text-sidebar-foreground hover:bg-sidebar-accent/50 transition-colors"
         >
           <LogOut size={16} />
