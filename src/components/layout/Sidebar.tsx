@@ -42,11 +42,11 @@ export default function Sidebar() {
   return (
     <aside className="w-64 flex flex-col border-r bg-sidebar h-full">
       {/* Logo */}
-      <div className="px-6 py-5 border-b">
-        <h1 className="text-lg font-semibold tracking-tight text-sidebar-foreground">
-          FISEI · INVENTARIO
+      <div className="px-6 py-5 border-b border-gray-200">
+        <h1 className="text-lg font-bold tracking-tight text-gray-900">
+          FISEI <span className="text-[#be1e34]">·</span> INVENTARIO
         </h1>
-        <p className="text-xs text-muted-foreground mt-0.5">Sistema de Gestión Tecnológica</p>
+        <p className="text-xs text-gray-500 mt-0.5">Sistema de Gestión Tecnológica</p>
       </div>
 
       {/* Nav */}
@@ -57,26 +57,26 @@ export default function Sidebar() {
             to={to}
             className={({ isActive }) =>
               cn(
-                'flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors',
+                'flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all duration-200 group font-medium',
                 isActive
-                  ? 'bg-sidebar-accent text-sidebar-accent-foreground font-medium'
-                  : 'text-sidebar-foreground hover:bg-sidebar-accent/50'
+                  ? 'bg-[#fff1f3] text-[#be1e34] shadow-sm ring-1 ring-[#ffcdd5]'
+                  : 'text-gray-600 hover:bg-gray-50 hover:text-[#be1e34]'
               )
             }
           >
-            <Icon size={16} />
+            <Icon size={18} className={cn("transition-transform duration-200", "group-hover:scale-110")} />
             {label}
           </NavLink>
         ))}
       </nav>
 
       {/* Logout */}
-      <div className="px-3 py-4 border-t">
+      <div className="px-3 py-4 border-t border-gray-200">
         <button
           onClick={handleLogout}
-          className="flex items-center gap-3 px-3 py-2 rounded-md text-sm w-full text-sidebar-foreground hover:bg-sidebar-accent/50 transition-colors"
+          className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm w-full font-medium text-gray-600 hover:bg-red-50 hover:text-[#be1e34] transition-all duration-200 group"
         >
-          <LogOut size={16} />
+          <LogOut size={18} className="transition-transform duration-200 group-hover:scale-110" />
           Cerrar sesión
         </button>
       </div>
