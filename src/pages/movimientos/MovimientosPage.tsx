@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '@/lib/api';
-import { useAuthStore } from '@/store/authStore';
 
 type Movimiento = {
   idMovimiento: number;
@@ -19,22 +18,24 @@ type Movimiento = {
 type CatItem = { id: number; nombre: string };
 type Articulo = { id_articulo: number; nombre: string; codigo_institucional: string };
 type Ubicacion = { id_ubicacion: number; nombre: string };
+type Usuario = { id_usuario: number; nombres: string; apellidos: string; cedula: string };
 
 const inputCls = 'w-full rounded-xl border px-3 py-2 text-sm focus:ring-2 focus:ring-[var(--fisei-red-200)] outline-none';
 const selectCls = 'w-full rounded-xl border bg-white px-3 py-2 text-sm focus:ring-2 focus:ring-[var(--fisei-red-200)] outline-none';
 
 export default function MovimientosPage() {
-  const usuario = useAuthStore((s) => s.usuario);
   const [movimientos, setMovimientos] = useState<Movimiento[]>([]);
   const [articulos, setArticulos] = useState<Articulo[]>([]);
   const [ubicaciones, setUbicaciones] = useState<Ubicacion[]>([]);
   const [tiposMov, setTiposMov] = useState<CatItem[]>([]);
+  const [usuariosList, setUsuariosList] = useState<Usuario[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
 
   const [fArticulo, setFArticulo] = useState('');
   const [fUbicacionDest, setFUbicacionDest] = useState('');
+  const [fUsuario, setFUsuario] = useState('');
   const [fTipo, setFTipo] = useState('');
   const [fMotivo, setFMotivo] = useState('');
   const [fObservacion, setFObservacion] = useState('');
@@ -59,16 +60,19 @@ export default function MovimientosPage() {
       api.get<Articulo[]>('/articulos'),
       api.get<Ubicacion[]>('/ubicaciones'),
       api.get<CatItem[]>('/catalogos/tipos-movimiento'),
-    ]).then(([a, u, t]) => {
+      api.get<Usuario[]>('/usuarios').then(r => r.data).catch(() => []),
+    ]).then(([a, u, t, us]) => {
       setArticulos(a.data);
       setUbicaciones(u.data);
       setTiposMov(t.data);
+      // @ts-ignore
+      setUsuariosList(us.value ?? us);
     }).catch(console.error);
   }, []);
 
   const registrarMovimiento = async () => {
-    if (!fArticulo || !fUbicacionDest || !fTipo) {
-      setFormError('Artículo, ubicación destino y tipo son obligatorios');
+    if (!fArticulo || !fUbicacionDest || !fTipo || !fUsuario) {
+      setFormError('Artículo, ubicación destino, tipo y usuario son obligatorios');
       return;
     }
     setFormError('');
@@ -77,13 +81,13 @@ export default function MovimientosPage() {
       await api.post('/movimientos', {
         id_articulo: Number(fArticulo),
         id_ubicacion_destino: Number(fUbicacionDest),
-        id_usuario: usuario?.id_usuario ?? 1,
+        id_usuario: Number(fUsuario),
         id_tipo_movimiento: Number(fTipo),
         motivo: fMotivo || undefined,
         observacion: fObservacion || undefined,
       });
       setShowModal(false);
-      setFArticulo(''); setFUbicacionDest(''); setFTipo(''); setFMotivo(''); setFObservacion('');
+      setFArticulo(''); setFUbicacionDest(''); setFUsuario(''); setFTipo(''); setFMotivo(''); setFObservacion('');
       await cargar();
     } catch { setFormError('Error al registrar movimiento.'); }
     finally { setActionLoading(false); }
@@ -166,6 +170,13 @@ export default function MovimientosPage() {
                 <select value={fUbicacionDest} onChange={(e) => setFUbicacionDest(e.target.value)} className={selectCls}>
                   <option value="">Seleccioná ubicación</option>
                   {ubicaciones.map((u) => <option key={u.id_ubicacion} value={u.id_ubicacion}>{u.nombre}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">Usuario responsable *</label>
+                <select value={fUsuario} onChange={(e) => setFUsuario(e.target.value)} className={selectCls}>
+                  <option value="">Seleccioná un usuario</option>
+                  {usuariosList.map((u) => <option key={u.id_usuario} value={u.id_usuario}>{u.nombres} {u.apellidos}</option>)}
                 </select>
               </div>
               <div>

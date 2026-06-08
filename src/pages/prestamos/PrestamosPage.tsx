@@ -23,6 +23,8 @@ type PrestamoBD = {
 
 type Articulo = { id_articulo: number; nombre: string; codigo_institucional: string };
 type CatItem = { id: number; nombre: string };
+type Usuario = { id_usuario: number; nombres: string; apellidos: string; cedula: string };
+
 
 const ESTADO_COLORS: Record<string, string> = {
   Pendiente: 'bg-amber-100 text-amber-700 border-amber-200',
@@ -45,15 +47,18 @@ export default function PrestamosPage() {
   const usuario = useAuthStore((s) => s.usuario);
   const [prestamos, setPrestamos] = useState<PrestamoBD[]>([]);
   const [articulos, setArticulos] = useState<Articulo[]>([]);
+  const [usuariosList, setUsuariosList] = useState<Usuario[]>([]);
   const [estadosCat, setEstadosCat] = useState<CatItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
   const [busqueda, setBusqueda] = useState('');
   const [filtroEstado, setFiltroEstado] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
 
   // Form nuevo préstamo
+  const [formSolicitante, setFormSolicitante] = useState('');
   const [formArticulos, setFormArticulos] = useState<number[]>([]);
   const [formFechaDevolucion, setFormFechaDevolucion] = useState('');
   const [formObservacion, setFormObservacion] = useState('');
@@ -85,9 +90,12 @@ export default function PrestamosPage() {
     Promise.all([
       api.get<Articulo[]>('/articulos'),
       api.get<CatItem[]>('/catalogos/estados-prestamo'),
-    ]).then(([resArt, resEst]) => {
+      api.get<Usuario[]>('/usuarios').then(r => r.data).catch(() => []),
+    ]).then(([resArt, resEst, resUsu]) => {
       setArticulos(resArt.data);
       setEstadosCat(resEst.data);
+      // @ts-ignore
+      setUsuariosList(resUsu.value ?? resUsu);
     }).catch(console.error);
   }, []);
 
@@ -95,32 +103,41 @@ export default function PrestamosPage() {
 
   const accion = async (id: number, endpoint: string, body?: object) => {
     setActionLoading(true);
+    setError('');
+    setSuccess('');
     try {
       await api.patch(`/prestamos/${id}/${endpoint}`, body ?? {});
+      setSuccess(`Préstamo ${endpoint} exitosamente.`);
       await cargar();
+      setTimeout(() => setSuccess(''), 4000);
     } catch {
-      alert(`Error al ejecutar acción: ${endpoint}`);
+      setError(`Error al ejecutar acción: ${endpoint}. Verificá los datos.`);
+      setTimeout(() => setError(''), 5000);
     } finally {
       setActionLoading(false);
     }
   };
 
   const crearPrestamo = async () => {
+    if (!formSolicitante) { setFormError('Seleccioná el solicitante'); return; }
     if (formArticulos.length === 0) { setFormError('Seleccioná al menos un artículo'); return; }
     if (!usuario) { setFormError('No hay sesión activa'); return; }
     setFormError('');
     setActionLoading(true);
     try {
       await api.post('/prestamos', {
-        id_solicitante: usuario.id_usuario,
+        id_solicitante: Number(formSolicitante),
         articulos: formArticulos,
         fecha_prevista_devolucion: formFechaDevolucion || undefined,
         observacion: formObservacion || undefined,
       });
       setShowModal(false);
+      setFormSolicitante('');
       setFormArticulos([]);
       setFormFechaDevolucion('');
       setFormObservacion('');
+      setSuccess('Préstamo creado correctamente.');
+      setTimeout(() => setSuccess(''), 4000);
       await cargar();
     } catch {
       setFormError('Error al crear el préstamo. Verificá los datos.');
@@ -174,8 +191,13 @@ export default function PrestamosPage() {
       </div>
 
       {/* Tabla */}
+      {success && (
+        <div className="mb-4 rounded-2xl border border-green-200 bg-green-50 p-4 text-sm text-green-700">
+          {success}
+        </div>
+      )}
       {loading ? (
-        <div className="rounded-2xl border bg-white p-8 text-center text-sm text-gray-500">Cargando préstamos…</div>
+        <div className="rounded-2xl border bg-white p-8 text-center text-sm text-gray-500">Cargando préstamos...</div>
       ) : error ? (
         <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div>
       ) : (
@@ -213,7 +235,7 @@ export default function PrestamosPage() {
                     <td className="px-4 py-3 text-gray-600">{p.ubicacion}</td>
                     <td className="px-4 py-3"><Badge estado={p.estado} /></td>
                     <td className="px-4 py-3 text-gray-600">{p.fechaSolicitud ?? '-'}</td>
-                    <td className="px-4 py-3 text-gray-600">{p.fechaPrevistaDevolucion ?? '-'}</td>
+                    <td className="px-4 py-3 text-gray-600">{p.fechaPrevistaDevolucion || '-'}</td>
                     <td className="px-4 py-3">
                       <div className="flex flex-wrap gap-1">
                         {p.estado === 'Pendiente' && (
@@ -222,7 +244,7 @@ export default function PrestamosPage() {
                               label="Aprobar"
                               color="bg-blue-500"
                               disabled={actionLoading}
-                              onClick={() => accion(p.idPrestamo, 'aprobar', { id_aprobador: usuario?.id_usuario ?? 1 })}
+                              onClick={() => accion(p.idPrestamo, 'aprobar', { id_aprobador: usuario?.id_usuario || 1 })}
                             />
                             <ActionBtn
                               label="Cancelar"
@@ -267,6 +289,21 @@ export default function PrestamosPage() {
               <p className="mb-3 rounded-xl bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700">{formError}</p>
             )}
             <div className="space-y-4">
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">Solicitante *</label>
+                <select
+                  value={formSolicitante}
+                  onChange={(e) => setFormSolicitante(e.target.value)}
+                  className="w-full rounded-xl border px-3 py-2 text-sm focus:ring-2 focus:ring-[var(--fisei-red-200)] outline-none bg-white"
+                >
+                  <option value="">Seleccioná un solicitante</option>
+                  {usuariosList.map((u) => (
+                    <option key={u.id_usuario} value={u.id_usuario}>
+                      {u.nombres} {u.apellidos} ({u.cedula})
+                    </option>
+                  ))}
+                </select>
+              </div>
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-700">Artículos *</label>
                 <select

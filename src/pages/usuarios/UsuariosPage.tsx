@@ -115,8 +115,11 @@ export default function UsuariosPage() {
       }
       setShowModal(false);
       await cargar();
-    } catch { setFormError('Error al guardar usuario. Verificá los datos.'); }
-    finally { setActionLoading(false); }
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string | string[] } } })?.response?.data?.message;
+      if (Array.isArray(msg)) setFormError(msg[0]);
+      else setFormError(msg ?? 'Error al guardar usuario. Verificá los datos.');
+    } finally { setActionLoading(false); }
   };
 
   return (
