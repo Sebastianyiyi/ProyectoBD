@@ -25,7 +25,6 @@ type Articulo = { id_articulo: number; nombre: string; codigo_institucional: str
 type CatItem = { id: number; nombre: string };
 type Usuario = { id_usuario: number; nombres: string; apellidos: string; cedula: string };
 
-
 const ESTADO_COLORS: Record<string, string> = {
   Pendiente: 'bg-amber-100 text-amber-700 border-amber-200',
   Aprobado: 'bg-blue-100 text-blue-700 border-blue-200',
@@ -37,7 +36,7 @@ const ESTADO_COLORS: Record<string, string> = {
 function Badge({ estado }: { estado: string }) {
   const cls = ESTADO_COLORS[estado] ?? 'bg-gray-100 text-gray-600 border-gray-200';
   return (
-    <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium ${cls}`}>
+    <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium shadow-sm ${cls}`}>
       {estado}
     </span>
   );
@@ -49,6 +48,7 @@ export default function PrestamosPage() {
   const [articulos, setArticulos] = useState<Articulo[]>([]);
   const [usuariosList, setUsuariosList] = useState<Usuario[]>([]);
   const [estadosCat, setEstadosCat] = useState<CatItem[]>([]);
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -101,17 +101,26 @@ export default function PrestamosPage() {
 
   const filtrados = useMemo(() => prestamos, [prestamos]);
 
+  // Obtener la fecha de hoy para bloquear fechas pasadas en el calendario
+  const todayDate = new Date().toISOString().split('T')[0];
+
   const accion = async (id: number, endpoint: string, body?: object) => {
+    if (endpoint === 'aprobar' && !usuario?.id_usuario) {
+      setError('Sesión inválida. Vuelve a iniciar sesión para aprobar préstamos.');
+      setTimeout(() => setError(''), 5000);
+      return;
+    }
+
     setActionLoading(true);
     setError('');
     setSuccess('');
     try {
       await api.patch(`/prestamos/${id}/${endpoint}`, body ?? {});
-      setSuccess(`Préstamo ${endpoint} exitosamente.`);
+      setSuccess(`Préstamo marcado como ${endpoint} exitosamente.`);
       await cargar();
       setTimeout(() => setSuccess(''), 4000);
     } catch {
-      setError(`Error al ejecutar acción: ${endpoint}. Verificá los datos.`);
+      setError(`Error al ejecutar acción: ${endpoint}. Verifica la integridad de los datos.`);
       setTimeout(() => setError(''), 5000);
     } finally {
       setActionLoading(false);
@@ -119,9 +128,10 @@ export default function PrestamosPage() {
   };
 
   const crearPrestamo = async () => {
-    if (!formSolicitante) { setFormError('Seleccioná el solicitante'); return; }
-    if (formArticulos.length === 0) { setFormError('Seleccioná al menos un artículo'); return; }
-    if (!usuario) { setFormError('No hay sesión activa'); return; }
+    if (!formSolicitante) { setFormError('Selecciona el solicitante.'); return; }
+    if (formArticulos.length === 0) { setFormError('Selecciona al menos un artículo de la lista.'); return; }
+    if (!usuario) { setFormError('No hay sesión activa. Por favor recarga la página.'); return; }
+
     setFormError('');
     setActionLoading(true);
     try {
@@ -136,46 +146,52 @@ export default function PrestamosPage() {
       setFormArticulos([]);
       setFormFechaDevolucion('');
       setFormObservacion('');
-      setSuccess('Préstamo creado correctamente.');
+      setSuccess('Préstamo registrado correctamente.');
       setTimeout(() => setSuccess(''), 4000);
       await cargar();
     } catch {
-      setFormError('Error al crear el préstamo. Verificá los datos.');
+      setFormError('Error al crear el préstamo. Verifica tu conexión o los datos ingresados.');
     } finally {
       setActionLoading(false);
     }
   };
 
+  const handleArticuloToggle = (id: number) => {
+    setFormArticulos(prev =>
+      prev.includes(id) ? prev.filter(itemId => itemId !== id) : [...prev, id]
+    );
+  };
+
   return (
     <div className="p-6 space-y-6">
       {/* Header */}
-      <div className="flex items-start justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight text-[var(--app-text)]">Préstamos</h1>
-          <p className="mt-1 text-sm text-[var(--fisei-red-600)]">Gestión del ciclo de vida de préstamos de equipos</p>
+          <h1 className="text-3xl font-bold tracking-tight text-gray-900">Gestión de Préstamos</h1>
+          <p className="mt-1 text-sm text-gray-500">Control del ciclo de vida y asignación temporal de equipos tecnológicos</p>
         </div>
         <button
           id="btn-nuevo-prestamo"
           onClick={() => setShowModal(true)}
-          className="flex items-center gap-2 rounded-xl bg-[var(--fisei-red-600)] px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-[var(--fisei-red-700)] active:scale-95"
+          className="flex items-center gap-2 rounded-xl bg-red-600 px-5 py-2.5 text-sm font-semibold text-white shadow-md transition hover:bg-red-700 active:scale-95"
         >
           + Nuevo préstamo
         </button>
       </div>
 
       {/* Filtros */}
-      <div className="rounded-2xl border bg-white p-4 shadow-sm flex flex-wrap gap-3">
+      <div className="rounded-2xl border bg-white p-5 shadow-sm flex flex-wrap gap-4">
         <input
           type="text"
           value={busqueda}
           onChange={(e) => setBusqueda(e.target.value)}
-          placeholder="Buscar por artículo o solicitante…"
-          className="h-10 flex-1 min-w-[200px] rounded-xl border px-3 text-sm outline-none focus:ring-2 focus:ring-[var(--fisei-red-200)]"
+          placeholder="Buscar por equipo o solicitante..."
+          className="h-10 flex-1 min-w-[250px] rounded-xl border px-4 text-sm outline-none focus:ring-2 focus:ring-red-200 transition-all"
         />
         <select
           value={filtroEstado}
           onChange={(e) => setFiltroEstado(e.target.value)}
-          className="h-10 rounded-xl border bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-[var(--fisei-red-200)]"
+          className="h-10 rounded-xl border bg-white px-4 text-sm outline-none focus:ring-2 focus:ring-red-200 transition-all"
         >
           <option value="">Todos los estados</option>
           {estadosCat.map((e) => (
@@ -184,91 +200,80 @@ export default function PrestamosPage() {
         </select>
         <button
           onClick={() => { setBusqueda(''); setFiltroEstado(''); }}
-          className="h-10 rounded-xl border px-4 text-sm text-gray-600 hover:bg-gray-50 transition"
+          className="h-10 rounded-xl border px-5 text-sm font-medium text-gray-600 hover:bg-gray-50 transition"
         >
           Limpiar
         </button>
       </div>
 
-      {/* Tabla */}
+      {/* Alertas Globales */}
       {success && (
-        <div className="mb-4 rounded-2xl border border-green-200 bg-green-50 p-4 text-sm text-green-700">
+        <div className="rounded-2xl border border-green-200 bg-green-50 p-4 text-sm text-green-700 shadow-sm animate-fade-in">
           {success}
         </div>
       )}
+      {error && (
+        <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 shadow-sm animate-fade-in">
+          {error}
+        </div>
+      )}
+
+      {/* Tabla */}
       {loading ? (
-        <div className="rounded-2xl border bg-white p-8 text-center text-sm text-gray-500">Cargando préstamos...</div>
-      ) : error ? (
-        <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div>
+        <div className="rounded-2xl border bg-white p-10 text-center text-sm text-gray-500 shadow-sm">
+          Cargando registro de préstamos...
+        </div>
       ) : (
         <div className="overflow-x-auto rounded-2xl border bg-white shadow-sm">
-          <table className="w-full min-w-[900px] border-collapse text-sm">
+          <table className="w-full min-w-[1000px] border-collapse text-sm">
             <thead>
-              <tr className="border-b bg-red-50/40 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
-                <th className="px-4 py-3">#</th>
-                <th className="px-4 py-3">Artículo</th>
-                <th className="px-4 py-3">Solicitante</th>
-                <th className="px-4 py-3">Ubicación</th>
-                <th className="px-4 py-3">Estado</th>
-                <th className="px-4 py-3">F. Solicitud</th>
-                <th className="px-4 py-3">F. Prevista Dev.</th>
-                <th className="px-4 py-3">Acciones</th>
+              <tr className="border-b bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
+                <th className="px-4 py-3.5">#ID</th>
+                <th className="px-4 py-3.5">Equipo / Componente</th>
+                <th className="px-4 py-3.5">Solicitante</th>
+                <th className="px-4 py-3.5">Ubicación</th>
+                <th className="px-4 py-3.5">Estado actual</th>
+                <th className="px-4 py-3.5">F. Solicitud</th>
+                <th className="px-4 py-3.5">F. Prevista Dev.</th>
+                <th className="px-4 py-3.5">Acciones Rápidas</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody className="divide-y text-gray-700">
               {filtrados.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-4 py-10 text-center text-gray-400">No hay préstamos registrados.</td>
+                  <td colSpan={8} className="px-4 py-12 text-center text-muted-foreground">
+                    No se encontraron préstamos activos.
+                  </td>
                 </tr>
               ) : (
                 filtrados.map((p) => (
-                  <tr key={`${p.idPrestamo}-${p.idArticulo}`} className="border-t hover:bg-red-50/20 transition-colors">
-                    <td className="px-4 py-3 font-mono text-xs text-gray-500">{p.idPrestamo}</td>
-                    <td className="px-4 py-3">
-                      <p className="font-medium text-[var(--app-text)]">{p.nombreArticulo}</p>
-                      <p className="text-xs text-gray-400">{p.codigoArticulo}</p>
+                  <tr key={`${p.idPrestamo}-${p.idArticulo}`} className="hover:bg-gray-50/70 transition-colors">
+                    <td className="px-4 py-4 font-mono text-xs text-gray-500">{p.idPrestamo}</td>
+                    <td className="px-4 py-4">
+                      <p className="font-semibold text-gray-900">{p.nombreArticulo}</p>
+                      <p className="text-xs text-gray-500 font-mono mt-0.5">{p.codigoArticulo}</p>
                     </td>
-                    <td className="px-4 py-3">
-                      <p>{p.solicitante}</p>
-                      <p className="text-xs text-gray-400">{p.correoSolicitante}</p>
+                    <td className="px-4 py-4">
+                      <p className="font-medium">{p.solicitante}</p>
+                      <p className="text-xs text-gray-500 mt-0.5">{p.correoSolicitante}</p>
                     </td>
-                    <td className="px-4 py-3 text-gray-600">{p.ubicacion}</td>
-                    <td className="px-4 py-3"><Badge estado={p.estado} /></td>
-                    <td className="px-4 py-3 text-gray-600">{p.fechaSolicitud ?? '-'}</td>
-                    <td className="px-4 py-3 text-gray-600">{p.fechaPrevistaDevolucion || '-'}</td>
-                    <td className="px-4 py-3">
-                      <div className="flex flex-wrap gap-1">
+                    <td className="px-4 py-4">{p.ubicacion}</td>
+                    <td className="px-4 py-4"><Badge estado={p.estado} /></td>
+                    <td className="px-4 py-4">{p.fechaSolicitud ?? '-'}</td>
+                    <td className="px-4 py-4">{p.fechaPrevistaDevolucion || '-'}</td>
+                    <td className="px-4 py-4">
+                      <div className="flex flex-wrap gap-2">
                         {p.estado === 'Pendiente' && (
                           <>
-                            <ActionBtn
-                              label="Aprobar"
-                              color="bg-blue-500"
-                              disabled={actionLoading}
-                              onClick={() => accion(p.idPrestamo, 'aprobar', { id_aprobador: usuario?.id_usuario || 1 })}
-                            />
-                            <ActionBtn
-                              label="Cancelar"
-                              color="bg-red-400"
-                              disabled={actionLoading}
-                              onClick={() => accion(p.idPrestamo, 'cancelar')}
-                            />
+                            <ActionBtn label="Aprobar" color="bg-blue-600 hover:bg-blue-700" disabled={actionLoading} onClick={() => accion(p.idPrestamo, 'aprobar', { id_aprobador: usuario?.id_usuario })} />
+                            <ActionBtn label="Cancelar" color="bg-red-500 hover:bg-red-600" disabled={actionLoading} onClick={() => accion(p.idPrestamo, 'cancelar')} />
                           </>
                         )}
                         {p.estado === 'Aprobado' && (
-                          <ActionBtn
-                            label="Entregar"
-                            color="bg-purple-500"
-                            disabled={actionLoading}
-                            onClick={() => accion(p.idPrestamo, 'entregar')}
-                          />
+                          <ActionBtn label="Marcar Entregado" color="bg-purple-600 hover:bg-purple-700" disabled={actionLoading} onClick={() => accion(p.idPrestamo, 'entregar')} />
                         )}
                         {p.estado === 'Entregado' && (
-                          <ActionBtn
-                            label="Devolver"
-                            color="bg-emerald-500"
-                            disabled={actionLoading}
-                            onClick={() => accion(p.idPrestamo, 'devolver')}
-                          />
+                          <ActionBtn label="Recibir Devolución" color="bg-emerald-600 hover:bg-emerald-700" disabled={actionLoading} onClick={() => accion(p.idPrestamo, 'devolver')} />
                         )}
                       </div>
                     </td>
@@ -280,83 +285,97 @@ export default function PrestamosPage() {
         </div>
       )}
 
-      {/* Modal nuevo préstamo */}
+      {/* Modal Nuevo Préstamo */}
       {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-          <div className="w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl">
-            <h2 className="text-xl font-bold text-[var(--app-text)] mb-4">Nuevo préstamo</h2>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 overflow-y-auto">
+          <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl border max-h-[90vh] overflow-y-auto animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between border-b pb-3 mb-4">
+              <h2 className="text-xl font-bold text-gray-900">Registrar Nuevo Préstamo</h2>
+              <button onClick={() => { setShowModal(false); setFormError(''); }} className="text-gray-400 hover:text-gray-600 transition">✕</button>
+            </div>
+
             {formError && (
-              <p className="mb-3 rounded-xl bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700">{formError}</p>
+              <p className="mb-4 rounded-xl bg-red-50 border border-red-200 px-4 py-2.5 text-sm text-red-700 animate-fade-in">{formError}</p>
             )}
-            <div className="space-y-4">
+
+            <div className="space-y-5">
               <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">Solicitante *</label>
+                <label className="mb-1.5 block text-xs font-semibold text-gray-700 uppercase tracking-wider">Usuario Solicitante *</label>
                 <select
                   value={formSolicitante}
                   onChange={(e) => setFormSolicitante(e.target.value)}
-                  className="w-full rounded-xl border px-3 py-2 text-sm focus:ring-2 focus:ring-[var(--fisei-red-200)] outline-none bg-white"
+                  className="w-full h-10 rounded-xl border bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-red-200 transition-all"
                 >
-                  <option value="">Seleccioná un solicitante</option>
+                  <option value="">Selecciona al solicitante...</option>
                   {usuariosList.map((u) => (
                     <option key={u.id_usuario} value={u.id_usuario}>
-                      {u.nombres} {u.apellidos} ({u.cedula})
+                      {u.nombres} {u.apellidos} - {u.cedula}
                     </option>
                   ))}
                 </select>
               </div>
+
               <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">Artículos *</label>
-                <select
-                  multiple
-                  size={5}
-                  value={formArticulos.map(String)}
-                  onChange={(e) => {
-                    const vals = Array.from(e.target.selectedOptions).map((o) => Number(o.value));
-                    setFormArticulos(vals);
-                  }}
-                  className="w-full rounded-xl border p-2 text-sm focus:ring-2 focus:ring-[var(--fisei-red-200)]"
-                >
+                <label className="mb-1.5 block text-xs font-semibold text-gray-700 uppercase tracking-wider">Equipos a prestar *</label>
+                {/* Nuevo selector de Checkboxes en lugar del select multiple */}
+                <div className="max-h-52 overflow-y-auto rounded-xl border p-2 space-y-1 bg-gray-50 focus-within:ring-2 focus-within:ring-red-200 transition-all">
                   {articulos.map((a) => (
-                    <option key={a.id_articulo} value={a.id_articulo}>
-                      {a.nombre} — {a.codigo_institucional}
-                    </option>
+                    <label key={a.id_articulo} className="flex items-center gap-3 rounded-lg hover:bg-gray-200/50 p-2 cursor-pointer transition-colors">
+                      <input
+                        type="checkbox"
+                        checked={formArticulos.includes(a.id_articulo)}
+                        onChange={() => handleArticuloToggle(a.id_articulo)}
+                        className="h-4 w-4 rounded border-gray-300 text-red-600 focus:ring-red-600"
+                      />
+                      <div className="flex flex-col">
+                        <span className="text-sm font-medium text-gray-800">{a.nombre}</span>
+                        <span className="text-xs font-mono text-gray-500">{a.codigo_institucional}</span>
+                      </div>
+                    </label>
                   ))}
-                </select>
-                <p className="mt-1 text-xs text-gray-400">Ctrl+clic para seleccionar varios</p>
+                  {articulos.length === 0 && (
+                    <p className="text-sm text-gray-500 text-center py-4">No hay equipos disponibles para prestar.</p>
+                  )}
+                </div>
+                <p className="mt-1.5 text-xs text-gray-400">Puedes seleccionar múltiples equipos activando las casillas.</p>
               </div>
+
               <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">Fecha prevista de devolución</label>
+                <label className="mb-1.5 block text-xs font-semibold text-gray-700 uppercase tracking-wider">Fecha prevista de devolución</label>
                 <input
                   type="date"
+                  min={todayDate} // Validación visual para no elegir fechas pasadas
                   value={formFechaDevolucion}
                   onChange={(e) => setFormFechaDevolucion(e.target.value)}
-                  className="w-full rounded-xl border px-3 py-2 text-sm focus:ring-2 focus:ring-[var(--fisei-red-200)]"
+                  className="w-full h-10 rounded-xl border px-3 text-sm outline-none focus:ring-2 focus:ring-red-200 transition-all"
                 />
               </div>
+
               <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">Observación</label>
+                <label className="mb-1.5 block text-xs font-semibold text-gray-700 uppercase tracking-wider">Observación / Motivo</label>
                 <textarea
                   value={formObservacion}
                   onChange={(e) => setFormObservacion(e.target.value)}
                   rows={3}
-                  className="w-full rounded-xl border px-3 py-2 text-sm focus:ring-2 focus:ring-[var(--fisei-red-200)]"
-                  placeholder="Descripción opcional del préstamo…"
+                  className="w-full rounded-xl border p-3 text-sm outline-none focus:ring-2 focus:ring-red-200 transition-all"
+                  placeholder="Ej. Uso para prácticas de redes o proyecto integrador..."
                 />
               </div>
             </div>
-            <div className="mt-6 flex gap-3 justify-end">
+
+            <div className="mt-6 flex gap-3 justify-end border-t pt-4">
               <button
                 onClick={() => { setShowModal(false); setFormError(''); }}
-                className="rounded-xl border px-4 py-2 text-sm text-gray-600 hover:bg-gray-50 transition"
+                className="rounded-xl border px-5 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50 transition"
               >
                 Cancelar
               </button>
               <button
                 onClick={crearPrestamo}
                 disabled={actionLoading}
-                className="rounded-xl bg-[var(--fisei-red-600)] px-5 py-2 text-sm font-semibold text-white transition hover:bg-[var(--fisei-red-700)] disabled:opacity-60"
+                className="rounded-xl bg-red-600 px-5 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-red-700 disabled:opacity-60"
               >
-                {actionLoading ? 'Guardando…' : 'Crear préstamo'}
+                {actionLoading ? 'Procesando...' : 'Confirmar Préstamo'}
               </button>
             </div>
           </div>
@@ -366,12 +385,13 @@ export default function PrestamosPage() {
   );
 }
 
+// Componente auxiliar para los botones de la tabla
 function ActionBtn({ label, color, onClick, disabled }: { label: string; color: string; onClick: () => void; disabled: boolean }) {
   return (
     <button
       onClick={onClick}
       disabled={disabled}
-      className={`${color} rounded-lg px-2 py-1 text-xs font-medium text-white transition hover:opacity-80 disabled:opacity-50`}
+      className={`${color} rounded-lg px-3 py-1.5 text-xs font-semibold text-white transition-all hover:scale-105 active:scale-95 disabled:opacity-50 disabled:pointer-events-none shadow-sm`}
     >
       {label}
     </button>

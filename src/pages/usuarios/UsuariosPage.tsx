@@ -1,6 +1,8 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import type { FormEvent, ChangeEvent } from 'react';
 import { api } from '@/lib/api';
 
+// Tipos basados en la estructura de tu base de datos
 type Usuario = {
   id_usuario: number;
   cedula: string;
@@ -8,244 +10,371 @@ type Usuario = {
   apellidos: string;
   correo: string;
   telefono: string | null;
+  fecha_registro: string;
   id_rol: number;
   id_estado_usuario: number;
 };
 
-type CatItem = { id: number; nombre: string };
-
-const ROL_COLOR: Record<number, string> = {
-  1: 'bg-purple-100 text-purple-700 border-purple-200',
-  2: 'bg-blue-100 text-blue-700 border-blue-200',
-  3: 'bg-gray-100 text-gray-600 border-gray-200',
+type Rol = {
+  id_rol: number;
+  nombre: string;
+  descripcion: string;
 };
 
-const ESTADO_COLOR: Record<number, string> = {
-  1: 'bg-emerald-100 text-emerald-700 border-emerald-200',
-  2: 'bg-red-100 text-red-700 border-red-200',
+type EstadoUsuario = {
+  id_estado_usuario: number;
+  nombre: string;
 };
-
-const inputCls = 'w-full rounded-xl border px-3 py-2 text-sm focus:ring-2 focus:ring-[var(--fisei-red-200)] outline-none';
-const selectCls = 'w-full rounded-xl border bg-white px-3 py-2 text-sm focus:ring-2 focus:ring-[var(--fisei-red-200)] outline-none';
 
 export default function UsuariosPage() {
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
-  const [roles, setRoles] = useState<CatItem[]>([]);
-  const [estadosU, setEstadosU] = useState<CatItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [busqueda, setBusqueda] = useState('');
-  const [filtroRol, setFiltroRol] = useState('');
-  const [showModal, setShowModal] = useState(false);
-  const [editId, setEditId] = useState<number | null>(null);
-  const [actionLoading, setActionLoading] = useState(false);
+  const [roles, setRoles] = useState<Rol[]>([]);
+  const [estados, setEstados] = useState<EstadoUsuario[]>([]);
 
-  const [fCedula, setFCedula] = useState('');
-  const [fNombres, setFNombres] = useState('');
-  const [fApellidos, setFApellidos] = useState('');
-  const [fCorreo, setFCorreo] = useState('');
-  const [fTelefono, setFTelefono] = useState('');
-  const [fRol, setFRol] = useState('');
-  const [fEstado, setFEstado] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+
+  // Filtros
+  const [busqueda, setBusqueda] = useState('');
+  const [idRolFiltro, setIdRolFiltro] = useState('');
+
+  // Estados para el Modal de Creación
+  const [showModal, setShowModal] = useState(false);
+  const [actionLoading, setActionLoading] = useState(false);
   const [formError, setFormError] = useState('');
 
-  const rolMap = new Map(roles.map((r) => [r.id, r.nombre]));
-  const estadoMap = new Map(estadosU.map((e) => [e.id, e.nombre]));
+  const [formData, setFormData] = useState({
+    cedula: '',
+    nombres: '',
+    apellidos: '',
+    correo: '',
+    telefono: '',
+    id_rol: '',
+    id_estado_usuario: ''
+  });
 
-  const cargar = useCallback(async () => {
+  const fetchData = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await api.get<Usuario[]>('/usuarios', {
-        params: {
-          busqueda: busqueda || undefined,
-          id_rol: filtroRol || undefined,
-        },
-      });
-      setUsuarios(res.data);
-    } catch { /* noop */ }
-    finally { setLoading(false); }
-  }, [busqueda, filtroRol]);
+      setError('');
 
-  useEffect(() => { void cargar(); }, [cargar]);
+      const [resUsuarios, resRoles, resEstados] = await Promise.all([
+        api.get<Usuario[]>('/usuarios', { params: { busqueda, id_rol: idRolFiltro } }),
+        api.get<Rol[]>('/catalogos/roles'),
+        api.get<EstadoUsuario[]>('/catalogos/estados-usuario')
+      ]);
+
+      // Adaptación de respuesta (dependiendo si tu backend devuelve el array directo o dentro de "value")
+      setUsuarios((resUsuarios.data as any).value ?? resUsuarios.data);
+      setRoles((resRoles.data as any).value ?? resRoles.data);
+      setEstados((resEstados.data as any).value ?? resEstados.data);
+    } catch (err) {
+      console.error('Error al cargar datos de usuarios:', err);
+      setError('No se pudo conectar con la base de datos para cargar los usuarios.');
+    } finally {
+      setLoading(false);
+    }
+  }, [busqueda, idRolFiltro]);
 
   useEffect(() => {
-    Promise.all([
-      api.get<CatItem[]>('/catalogos/roles'),
-      api.get<CatItem[]>('/catalogos/estados-usuario'),
-    ]).then(([r, e]) => { setRoles(r.data); setEstadosU(e.data); }).catch(console.error);
-  }, []);
+    void fetchData();
+  }, [fetchData]);
 
-  const abrirNuevo = () => {
-    setEditId(null);
-    setFCedula(''); setFNombres(''); setFApellidos('');
-    setFCorreo(''); setFTelefono(''); setFRol(''); setFEstado('');
-    setFormError('');
-    setShowModal(true);
+  // Mapas para renderizado rápido en la tabla
+  const rolMap = useMemo(() => new Map(roles.map((r) => [r.id_rol, r.nombre])), [roles]);
+  const estadoMap = useMemo(() => new Map(estados.map((e) => [e.id_estado_usuario, e.nombre])), [estados]);
+
+  const handleInputChange = (e: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({ ...prev, [name]: value }));
   };
 
-  const abrirEditar = (u: Usuario) => {
-    setEditId(u.id_usuario);
-    setFCedula(u.cedula); setFNombres(u.nombres); setFApellidos(u.apellidos);
-    setFCorreo(u.correo); setFTelefono(u.telefono ?? '');
-    setFRol(String(u.id_rol)); setFEstado(String(u.id_estado_usuario));
-    setFormError('');
-    setShowModal(true);
-  };
-
-  const guardar = async () => {
-    if (!fNombres || !fApellidos || !fCorreo || !fRol || !fEstado) {
-      setFormError('Nombres, apellidos, correo, rol y estado son obligatorios');
+  const handleCrearUsuario = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!formData.cedula || !formData.nombres || !formData.apellidos || !formData.correo || !formData.id_rol || !formData.id_estado_usuario) {
+      setFormError('Por favor, completa todos los campos obligatorios (*).');
       return;
     }
+
+    if (!formData.correo.includes('@')) {
+      setFormError('El correo electrónico no tiene un formato válido.');
+      return;
+    }
+
     setFormError('');
     setActionLoading(true);
+
     try {
-      if (editId) {
-        await api.patch(`/usuarios/${editId}`, {
-          nombres: fNombres, apellidos: fApellidos,
-          correo: fCorreo, telefono: fTelefono || undefined,
-          id_rol: Number(fRol), id_estado_usuario: Number(fEstado),
-        });
-      } else {
-        if (!fCedula) { setFormError('Cédula es obligatoria'); return; }
-        await api.post('/usuarios', {
-          cedula: fCedula, nombres: fNombres, apellidos: fApellidos,
-          correo: fCorreo, telefono: fTelefono || undefined,
-          id_rol: Number(fRol), id_estado_usuario: Number(fEstado),
-        });
-      }
+      const payload = {
+        ...formData,
+        id_rol: Number(formData.id_rol),
+        id_estado_usuario: Number(formData.id_estado_usuario),
+        telefono: formData.telefono || undefined,
+        // Contraseña por defecto para nuevos usuarios basada en su cédula
+        contrasena: formData.cedula
+      };
+
+      await api.post('/usuarios', payload);
+      setSuccess('Usuario registrado correctamente. La contraseña temporal es su número de cédula.');
       setShowModal(false);
-      await cargar();
-    } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { message?: string | string[] } } })?.response?.data?.message;
-      if (Array.isArray(msg)) setFormError(msg[0]);
-      else setFormError(msg ?? 'Error al guardar usuario. Verificá los datos.');
-    } finally { setActionLoading(false); }
+      setFormData({ cedula: '', nombres: '', apellidos: '', correo: '', telefono: '', id_rol: '', id_estado_usuario: '' });
+      setTimeout(() => setSuccess(''), 6000);
+      void fetchData();
+    } catch (err: any) {
+      console.error(err);
+      setFormError(err.response?.data?.message || 'Error al crear el usuario. Verifica que la cédula o correo no estén ya registrados.');
+    } finally {
+      setActionLoading(false);
+    }
   };
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex items-start justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight text-[var(--app-text)]">Usuarios</h1>
-          <p className="mt-1 text-sm text-[var(--fisei-red-600)]">Gestión de usuarios del sistema</p>
+    <div className="p-6 space-y-6 animate-in fade-in duration-500">
+      {/* Encabezado */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div className="space-y-1">
+          <h1 className="text-3xl font-bold tracking-tight text-gray-900">Control de Usuarios</h1>
+          <p className="text-sm text-gray-500">
+            Gestión de accesos, roles y personal autorizado en la institución.
+          </p>
         </div>
-        <button id="btn-nuevo-usuario" onClick={abrirNuevo} className="flex items-center gap-2 rounded-xl bg-[var(--fisei-red-600)] px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-[var(--fisei-red-700)] active:scale-95">
-          + Nuevo usuario
+        <button
+          onClick={() => setShowModal(true)}
+          className="flex items-center justify-center gap-2 rounded-xl bg-red-600 px-5 py-2.5 text-sm font-semibold text-white shadow-md transition hover:bg-red-700 active:scale-95"
+        >
+          + Nuevo Usuario
         </button>
       </div>
 
-      <div className="rounded-2xl border bg-white p-4 shadow-sm flex flex-wrap gap-3">
-        <input type="text" value={busqueda} onChange={(e) => setBusqueda(e.target.value)} placeholder="Buscar por nombre, cédula o correo…" className="h-10 flex-1 min-w-[200px] rounded-xl border px-3 text-sm outline-none focus:ring-2 focus:ring-[var(--fisei-red-200)]" />
-        <select value={filtroRol} onChange={(e) => setFiltroRol(e.target.value)} className="h-10 rounded-xl border bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-[var(--fisei-red-200)]">
+      {/* Alertas */}
+      {success && (
+        <div className="rounded-2xl border border-green-200 bg-green-50 p-4 text-sm text-green-700 shadow-sm">
+          {success}
+        </div>
+      )}
+      {error && (
+        <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 shadow-sm">
+          {error}
+        </div>
+      )}
+
+      {/* Filtros */}
+      <div className="rounded-2xl border bg-white p-5 shadow-sm flex flex-wrap gap-4 items-center">
+        <input
+          type="text"
+          value={busqueda}
+          onChange={(e) => setBusqueda(e.target.value)}
+          placeholder="Buscar por nombre, apellido o cédula..."
+          className="h-10 flex-1 min-w-[250px] rounded-xl border px-4 text-sm outline-none focus:ring-2 focus:ring-red-200 transition-all"
+        />
+        <select
+          value={idRolFiltro}
+          onChange={(e) => setIdRolFiltro(e.target.value)}
+          className="h-10 rounded-xl border bg-white px-4 text-sm outline-none focus:ring-2 focus:ring-red-200 transition-all"
+        >
           <option value="">Todos los roles</option>
-          {roles.map((r) => <option key={r.id} value={r.id}>{r.nombre}</option>)}
+          {roles.map((r) => (
+            <option key={r.id_rol} value={r.id_rol}>{r.nombre}</option>
+          ))}
         </select>
-        <button onClick={() => { setBusqueda(''); setFiltroRol(''); }} className="h-10 rounded-xl border px-4 text-sm text-gray-600 hover:bg-gray-50 transition">Limpiar</button>
+        <button
+          onClick={() => { setBusqueda(''); setIdRolFiltro(''); }}
+          className="h-10 rounded-xl border px-5 text-sm font-medium text-gray-600 hover:bg-gray-50 transition"
+        >
+          Limpiar
+        </button>
       </div>
 
+      {/* Tabla de Usuarios */}
       {loading ? (
-        <div className="rounded-2xl border bg-white p-8 text-center text-sm text-gray-500">Cargando usuarios…</div>
+        <div className="rounded-2xl border bg-white p-10 text-center text-sm text-gray-500 shadow-sm">
+          Cargando directorio de usuarios...
+        </div>
       ) : (
         <div className="overflow-x-auto rounded-2xl border bg-white shadow-sm">
-          <table className="w-full min-w-[800px] border-collapse text-sm">
+          <table className="w-full min-w-[1000px] border-collapse text-sm">
             <thead>
-              <tr className="border-b bg-red-50/40 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
-                <th className="px-4 py-3">#</th>
-                <th className="px-4 py-3">Cédula</th>
-                <th className="px-4 py-3">Nombre</th>
-                <th className="px-4 py-3">Correo</th>
-                <th className="px-4 py-3">Teléfono</th>
-                <th className="px-4 py-3">Rol</th>
-                <th className="px-4 py-3">Estado</th>
-                <th className="px-4 py-3">Acciones</th>
+              <tr className="border-b bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
+                <th className="px-5 py-4">Usuario</th>
+                <th className="px-5 py-4">Documento (C.I.)</th>
+                <th className="px-5 py-4">Contacto</th>
+                <th className="px-5 py-4">Rol Asignado</th>
+                <th className="px-5 py-4">Estado</th>
+                <th className="px-5 py-4">Fecha Registro</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody className="divide-y text-gray-700">
               {usuarios.length === 0 ? (
-                <tr><td colSpan={8} className="px-4 py-10 text-center text-gray-400">No hay usuarios registrados.</td></tr>
-              ) : usuarios.map((u) => (
-                <tr key={u.id_usuario} className="border-t hover:bg-red-50/20 transition-colors">
-                  <td className="px-4 py-3 font-mono text-xs text-gray-500">{u.id_usuario}</td>
-                  <td className="px-4 py-3 font-mono text-xs">{u.cedula}</td>
-                  <td className="px-4 py-3 font-medium">{u.apellidos}, {u.nombres}</td>
-                  <td className="px-4 py-3 text-gray-600 text-xs">{u.correo}</td>
-                  <td className="px-4 py-3 text-gray-500">{u.telefono ?? '—'}</td>
-                  <td className="px-4 py-3">
-                    <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium ${ROL_COLOR[u.id_rol] ?? 'bg-gray-100 text-gray-600'}`}>
-                      {rolMap.get(u.id_rol) ?? `Rol ${u.id_rol}`}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium ${ESTADO_COLOR[u.id_estado_usuario] ?? 'bg-gray-100 text-gray-600'}`}>
-                      {estadoMap.get(u.id_estado_usuario) ?? `Est. ${u.id_estado_usuario}`}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <button onClick={() => abrirEditar(u)} className="rounded-lg bg-[var(--fisei-red-600)] px-2 py-1 text-xs font-medium text-white hover:opacity-80 transition">Editar</button>
+                <tr>
+                  <td colSpan={6} className="px-5 py-12 text-center text-gray-500">
+                    No se encontraron usuarios con los filtros especificados.
                   </td>
                 </tr>
-              ))}
+              ) : (
+                usuarios.map((u) => (
+                  <tr key={u.id_usuario} className="hover:bg-gray-50/70 transition-colors">
+                    <td className="px-5 py-4">
+                      <p className="font-semibold text-gray-900">{u.nombres} {u.apellidos}</p>
+                      <p className="text-xs text-gray-500 mt-0.5">{u.correo}</p>
+                    </td>
+                    <td className="px-5 py-4 font-mono text-gray-600">{u.cedula}</td>
+                    <td className="px-5 py-4 text-gray-600">{u.telefono || <span className="italic text-gray-400">Sin registrar</span>}</td>
+                    <td className="px-5 py-4">
+                      <span className="inline-flex items-center rounded-md bg-blue-50 px-2 py-1 text-xs font-semibold text-blue-700 ring-1 ring-inset ring-blue-700/10">
+                        {rolMap.get(u.id_rol) || `Rol #${u.id_rol}`}
+                      </span>
+                    </td>
+                    <td className="px-5 py-4">
+                      <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium shadow-sm ${estadoMap.get(u.id_estado_usuario) === 'Activo'
+                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                          : 'bg-gray-100 text-gray-600 border-gray-200'
+                        }`}>
+                        {estadoMap.get(u.id_estado_usuario) || `Estado #${u.id_estado_usuario}`}
+                      </span>
+                    </td>
+                    <td className="px-5 py-4 text-gray-500">{new Date(u.fecha_registro).toLocaleDateString()}</td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>
       )}
 
+      {/* Modal Nuevo Usuario */}
       {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-          <div className="w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-bold text-[var(--app-text)]">{editId ? 'Editar usuario' : 'Nuevo usuario'}</h2>
-              <button onClick={() => setShowModal(false)} className="text-gray-400 hover:text-gray-600 text-xl">&times;</button>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 overflow-y-auto">
+          <div className="w-full max-w-xl rounded-2xl bg-white p-6 shadow-xl border max-h-[90vh] overflow-y-auto animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between border-b pb-3 mb-4">
+              <h2 className="text-xl font-bold text-gray-900">Registrar Personal / Estudiante</h2>
+              <button onClick={() => { setShowModal(false); setFormError(''); }} className="text-gray-400 hover:text-gray-600 transition text-lg">✕</button>
             </div>
-            {formError && <p className="mb-3 rounded-xl bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700">{formError}</p>}
-            <div className="space-y-4">
-              {!editId && (
+
+            {formError && (
+              <p className="mb-4 rounded-xl bg-red-50 border border-red-200 px-4 py-2.5 text-sm text-red-700 animate-fade-in">{formError}</p>
+            )}
+
+            <form onSubmit={handleCrearUsuario} className="space-y-4">
+              <div className="grid gap-4 sm:grid-cols-2">
                 <div>
-                  <label className="mb-1 block text-sm font-medium text-gray-700">Cédula *</label>
-                  <input type="text" value={fCedula} onChange={(e) => setFCedula(e.target.value)} maxLength={13} className={inputCls} placeholder="1234567890" />
+                  <label className="mb-1 block text-xs font-semibold text-gray-700 uppercase tracking-wider">Nombres *</label>
+                  <input
+                    type="text"
+                    name="nombres"
+                    value={formData.nombres}
+                    onChange={handleInputChange}
+                    maxLength={100}
+                    className="w-full h-10 rounded-xl border px-3 text-sm outline-none focus:ring-2 focus:ring-red-200 transition-all"
+                    required
+                  />
                 </div>
-              )}
-              <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="mb-1 block text-sm font-medium text-gray-700">Nombres *</label>
-                  <input type="text" value={fNombres} onChange={(e) => setFNombres(e.target.value)} className={inputCls} />
-                </div>
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-gray-700">Apellidos *</label>
-                  <input type="text" value={fApellidos} onChange={(e) => setFApellidos(e.target.value)} className={inputCls} />
+                  <label className="mb-1 block text-xs font-semibold text-gray-700 uppercase tracking-wider">Apellidos *</label>
+                  <input
+                    type="text"
+                    name="apellidos"
+                    value={formData.apellidos}
+                    onChange={handleInputChange}
+                    maxLength={100}
+                    className="w-full h-10 rounded-xl border px-3 text-sm outline-none focus:ring-2 focus:ring-red-200 transition-all"
+                    required
+                  />
                 </div>
               </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-xs font-semibold text-gray-700 uppercase tracking-wider">Cédula de Identidad *</label>
+                  <input
+                    type="text"
+                    name="cedula"
+                    value={formData.cedula}
+                    onChange={handleInputChange}
+                    maxLength={13}
+                    placeholder="Ej. 1801020304"
+                    className="w-full h-10 rounded-xl border px-3 text-sm font-mono outline-none focus:ring-2 focus:ring-red-200 transition-all"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-semibold text-gray-700 uppercase tracking-wider">Teléfono</label>
+                  <input
+                    type="text"
+                    name="telefono"
+                    value={formData.telefono}
+                    onChange={handleInputChange}
+                    maxLength={15}
+                    placeholder="Opcional"
+                    className="w-full h-10 rounded-xl border px-3 text-sm outline-none focus:ring-2 focus:ring-red-200 transition-all"
+                  />
+                </div>
+              </div>
+
               <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">Correo *</label>
-                <input type="email" value={fCorreo} onChange={(e) => setFCorreo(e.target.value)} className={inputCls} />
+                <label className="mb-1 block text-xs font-semibold text-gray-700 uppercase tracking-wider">Correo Institucional *</label>
+                <input
+                  type="email"
+                  name="correo"
+                  value={formData.correo}
+                  onChange={handleInputChange}
+                  maxLength={120}
+                  placeholder="ejemplo@uta.edu.ec"
+                  className="w-full h-10 rounded-xl border px-3 text-sm outline-none focus:ring-2 focus:ring-red-200 transition-all"
+                  required
+                />
               </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">Teléfono</label>
-                <input type="text" value={fTelefono} onChange={(e) => setFTelefono(e.target.value)} className={inputCls} />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
+
+              <div className="grid gap-4 sm:grid-cols-2">
                 <div>
-                  <label className="mb-1 block text-sm font-medium text-gray-700">Rol *</label>
-                  <select value={fRol} onChange={(e) => setFRol(e.target.value)} className={selectCls}>
-                    <option value="">Seleccioná</option>
-                    {roles.map((r) => <option key={r.id} value={r.id}>{r.nombre}</option>)}
+                  <label className="mb-1 block text-xs font-semibold text-gray-700 uppercase tracking-wider">Rol en el sistema *</label>
+                  <select
+                    name="id_rol"
+                    value={formData.id_rol}
+                    onChange={handleInputChange}
+                    className="w-full h-10 rounded-xl border bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-red-200 transition-all"
+                    required
+                  >
+                    <option value="">Selecciona rol...</option>
+                    {roles.map((r) => (
+                      <option key={r.id_rol} value={r.id_rol}>{r.nombre}</option>
+                    ))}
                   </select>
                 </div>
                 <div>
-                  <label className="mb-1 block text-sm font-medium text-gray-700">Estado *</label>
-                  <select value={fEstado} onChange={(e) => setFEstado(e.target.value)} className={selectCls}>
-                    <option value="">Seleccioná</option>
-                    {estadosU.map((e) => <option key={e.id} value={e.id}>{e.nombre}</option>)}
+                  <label className="mb-1 block text-xs font-semibold text-gray-700 uppercase tracking-wider">Estado de Cuenta *</label>
+                  <select
+                    name="id_estado_usuario"
+                    value={formData.id_estado_usuario}
+                    onChange={handleInputChange}
+                    className="w-full h-10 rounded-xl border bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-red-200 transition-all"
+                    required
+                  >
+                    <option value="">Selecciona estado...</option>
+                    {estados.map((e) => (
+                      <option key={e.id_estado_usuario} value={e.id_estado_usuario}>{e.nombre}</option>
+                    ))}
                   </select>
                 </div>
               </div>
-            </div>
-            <div className="mt-6 flex gap-3 justify-end">
-              <button onClick={() => setShowModal(false)} className="rounded-xl border px-4 py-2 text-sm text-gray-600 hover:bg-gray-50 transition">Cancelar</button>
-              <button onClick={guardar} disabled={actionLoading} className="rounded-xl bg-[var(--fisei-red-600)] px-5 py-2 text-sm font-semibold text-white hover:bg-[var(--fisei-red-700)] disabled:opacity-60 transition">
-                {actionLoading ? 'Guardando…' : editId ? 'Guardar cambios' : 'Crear usuario'}
-              </button>
-            </div>
+
+              <div className="mt-6 flex gap-3 justify-end border-t pt-4">
+                <button
+                  type="button"
+                  onClick={() => { setShowModal(false); setFormError(''); }}
+                  className="rounded-xl border px-5 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50 transition"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={actionLoading}
+                  className="rounded-xl bg-red-600 px-5 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-red-700 disabled:opacity-60"
+                >
+                  {actionLoading ? 'Guardando...' : 'Crear Usuario'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
