@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { FormEvent, ChangeEvent } from 'react';
 import { api } from '@/lib/api';
+import { Pagination } from '@/components/ui/Pagination';
 
 // Tipos basados en la estructura de tu base de datos
 type Usuario = {
@@ -16,13 +17,13 @@ type Usuario = {
 };
 
 type Rol = {
-  id_rol: number;
+  id: number;
   nombre: string;
   descripcion: string;
 };
 
 type EstadoUsuario = {
-  id_estado_usuario: number;
+  id: number;
   nombre: string;
 };
 
@@ -38,6 +39,10 @@ export default function UsuariosPage() {
   // Filtros
   const [busqueda, setBusqueda] = useState('');
   const [idRolFiltro, setIdRolFiltro] = useState('');
+
+  // Paginación
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
 
   // Estados para el Modal de Creación
   const [showModal, setShowModal] = useState(false);
@@ -82,8 +87,18 @@ export default function UsuariosPage() {
   }, [fetchData]);
 
   // Mapas para renderizado rápido en la tabla
-  const rolMap = useMemo(() => new Map(roles.map((r) => [r.id_rol, r.nombre])), [roles]);
-  const estadoMap = useMemo(() => new Map(estados.map((e) => [e.id_estado_usuario, e.nombre])), [estados]);
+  const rolMap = useMemo(() => new Map(roles.map((r) => [r.id, r.nombre])), [roles]);
+  const estadoMap = useMemo(() => new Map(estados.map((e) => [e.id, e.nombre])), [estados]);
+
+  const totalPages = Math.ceil(usuarios.length / itemsPerPage);
+  const paginatedData = useMemo(() => {
+    const start = (currentPage - 1) * itemsPerPage;
+    return usuarios.slice(start, start + itemsPerPage);
+  }, [usuarios, currentPage]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [busqueda, idRolFiltro]);
 
   const handleInputChange = (e: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
@@ -97,33 +112,39 @@ export default function UsuariosPage() {
       return;
     }
 
-    if (!formData.correo.includes('@')) {
-      setFormError('El correo electrónico no tiene un formato válido.');
-      return;
-    }
-
     setFormError('');
     setActionLoading(true);
 
     try {
+      // ESTE ES EL PAYLOAD QUE TU BACKEND ESPERA
+      // Nos aseguramos de enviar exactamente los nombres que espera el DTO de NestJS
       const payload = {
-        ...formData,
+        cedula: formData.cedula,
+        nombres: formData.nombres,
+        apellidos: formData.apellidos,
+        correo: formData.correo,
+        telefono: formData.telefono || null,
+
+        // Enviamos tanto snake_case como camelCase para cubrir todas las bases
         id_rol: Number(formData.id_rol),
+        idRol: Number(formData.id_rol),
+
         id_estado_usuario: Number(formData.id_estado_usuario),
-        telefono: formData.telefono || undefined,
-        // Contraseña por defecto para nuevos usuarios basada en su cédula
-        contrasena: formData.cedula
+        idEstadoUsuario: Number(formData.id_estado_usuario),
+
+        contrasena: formData.cedula, // Tu backend usa esto para hashear
       };
 
       await api.post('/usuarios', payload);
-      setSuccess('Usuario registrado correctamente. La contraseña temporal es su número de cédula.');
+
+      setSuccess('Usuario registrado correctamente.');
       setShowModal(false);
       setFormData({ cedula: '', nombres: '', apellidos: '', correo: '', telefono: '', id_rol: '', id_estado_usuario: '' });
-      setTimeout(() => setSuccess(''), 6000);
+      setTimeout(() => setSuccess(''), 4000);
       void fetchData();
     } catch (err: any) {
-      console.error(err);
-      setFormError(err.response?.data?.message || 'Error al crear el usuario. Verifica que la cédula o correo no estén ya registrados.');
+      console.error('Error de servidor:', err.response?.data);
+      setFormError(err.response?.data?.message || 'Error al guardar. Verifica la conexión.');
     } finally {
       setActionLoading(false);
     }
@@ -175,11 +196,11 @@ export default function UsuariosPage() {
         >
           <option value="">Todos los roles</option>
           {roles.map((r) => (
-            <option key={r.id_rol} value={r.id_rol}>{r.nombre}</option>
+            <option key={r.id} value={r.id}>{r.nombre}</option>
           ))}
         </select>
         <button
-          onClick={() => { setBusqueda(''); setIdRolFiltro(''); }}
+          onClick={() => { setBusqueda(''); setIdRolFiltro(''); setCurrentPage(1); }}
           className="h-10 rounded-xl border px-5 text-sm font-medium text-gray-600 hover:bg-gray-50 transition"
         >
           Limpiar
@@ -205,14 +226,14 @@ export default function UsuariosPage() {
               </tr>
             </thead>
             <tbody className="divide-y text-gray-700">
-              {usuarios.length === 0 ? (
+              {paginatedData.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-5 py-12 text-center text-gray-500">
-                    No se encontraron usuarios con los filtros especificados.
+                  <td colSpan={6} className="px-5 py-12 text-center text-gray-400">
+                    No se encontraron usuarios registrados.
                   </td>
                 </tr>
               ) : (
-                usuarios.map((u) => (
+                paginatedData.map((u) => (
                   <tr key={u.id_usuario} className="hover:bg-gray-50/70 transition-colors">
                     <td className="px-5 py-4">
                       <p className="font-semibold text-gray-900">{u.nombres} {u.apellidos}</p>
@@ -227,8 +248,8 @@ export default function UsuariosPage() {
                     </td>
                     <td className="px-5 py-4">
                       <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium shadow-sm ${estadoMap.get(u.id_estado_usuario) === 'Activo'
-                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                          : 'bg-gray-100 text-gray-600 border-gray-200'
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                        : 'bg-gray-100 text-gray-600 border-gray-200'
                         }`}>
                         {estadoMap.get(u.id_estado_usuario) || `Estado #${u.id_estado_usuario}`}
                       </span>
@@ -239,6 +260,11 @@ export default function UsuariosPage() {
               )}
             </tbody>
           </table>
+          <Pagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            onPageChange={setCurrentPage}
+          />
         </div>
       )}
 
@@ -337,7 +363,7 @@ export default function UsuariosPage() {
                   >
                     <option value="">Selecciona rol...</option>
                     {roles.map((r) => (
-                      <option key={r.id_rol} value={r.id_rol}>{r.nombre}</option>
+                      <option key={r.id} value={r.id}>{r.nombre}</option>
                     ))}
                   </select>
                 </div>
@@ -352,7 +378,7 @@ export default function UsuariosPage() {
                   >
                     <option value="">Selecciona estado...</option>
                     {estados.map((e) => (
-                      <option key={e.id_estado_usuario} value={e.id_estado_usuario}>{e.nombre}</option>
+                      <option key={e.id} value={e.id}>{e.nombre}</option>
                     ))}
                   </select>
                 </div>

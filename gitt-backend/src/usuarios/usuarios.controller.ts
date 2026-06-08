@@ -10,7 +10,7 @@ import {
 } from '@nestjs/common';
 import { UsuariosService } from './usuarios.service';
 import type { FiltrosUsuario } from './usuarios.service';
-import type { CreateUsuarioDto } from './dto/create-usuario.dto';
+import { CreateUsuarioDto } from './dto/create-usuario.dto';
 
 @Controller('usuarios')
 export class UsuariosController {

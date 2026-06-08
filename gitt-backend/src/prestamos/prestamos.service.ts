@@ -96,6 +96,14 @@ export class PrestamosService {
       const saved = await manager.save(Prestamo, prestamo);
 
       for (const idArticulo of dto.articulos) {
+        // Verificar disponibilidad
+        const artRows = await manager.query('SELECT id_estado_articulo FROM articulo WHERE id_articulo = $1 FOR UPDATE', [idArticulo]);
+        if (!artRows.length || artRows[0].id_estado_articulo !== 1) {
+          throw new BadRequestException(`El equipo #${idArticulo} no está disponible para préstamo.`);
+        }
+        // Reservarlo (2 = En Préstamo)
+        await manager.query('UPDATE articulo SET id_estado_articulo = 2 WHERE id_articulo = $1', [idArticulo]);
+
         const detalle = manager.create(DetallePrestamo, {
           id_prestamo: saved.id_prestamo,
           id_articulo: idArticulo,
@@ -157,6 +165,13 @@ export class PrestamosService {
       );
     }
 
+    // Liberar los equipos (1 = Disponible)
+    await this.dataSource.query(`
+      UPDATE articulo 
+      SET id_estado_articulo = 1 
+      WHERE id_articulo IN (SELECT id_articulo FROM detalle_prestamo WHERE id_prestamo = $1)
+    `, [id]);
+
     return this.prestamoRepo.save(prestamo);
   }
 
@@ -169,6 +184,13 @@ export class PrestamosService {
     );
     if (!estadoRows[0]) throw new BadRequestException('Estado Cancelado no configurado en la BD');
     prestamo.id_estado_prestamo = estadoRows[0].id_estado_prestamo;
+
+    // Liberar los equipos (1 = Disponible)
+    await this.dataSource.query(`
+      UPDATE articulo 
+      SET id_estado_articulo = 1 
+      WHERE id_articulo IN (SELECT id_articulo FROM detalle_prestamo WHERE id_prestamo = $1)
+    `, [id]);
 
     return this.prestamoRepo.save(prestamo);
   }

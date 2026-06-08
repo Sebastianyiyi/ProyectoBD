@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, useMemo } from 'react';
 import type { FormEvent, ChangeEvent } from 'react';
 import { api } from '@/lib/api';
+import { Pagination } from '@/components/ui/Pagination';
 
 // Tipos basados en la estructura de tu tabla ubicacion
 type Ubicacion = {
@@ -30,6 +31,10 @@ export default function UbicacionesPage() {
   // Filtros
   const [busqueda, setBusqueda] = useState('');
   const [filtroTipo, setFiltroTipo] = useState('');
+
+  // Paginación
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
 
   // Estados Modal
   const [showModal, setShowModal] = useState(false);
@@ -69,6 +74,16 @@ export default function UbicacionesPage() {
   useEffect(() => {
     void fetchData();
   }, [fetchData]);
+
+  const totalPages = Math.ceil(ubicaciones.length / itemsPerPage);
+  const paginatedData = useMemo(() => {
+    const start = (currentPage - 1) * itemsPerPage;
+    return ubicaciones.slice(start, start + itemsPerPage);
+  }, [ubicaciones, currentPage]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [busqueda, filtroTipo]);
 
   const handleInputChange = (e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
@@ -191,14 +206,14 @@ export default function UbicacionesPage() {
               </tr>
             </thead>
             <tbody className="divide-y text-gray-700">
-              {ubicaciones.length === 0 ? (
+              {paginatedData.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-5 py-12 text-center text-gray-500">
-                    No se encontraron ubicaciones físicas registradas.
+                  <td colSpan={5} className="px-5 py-12 text-center text-gray-400">
+                    No se encontraron ubicaciones registradas.
                   </td>
                 </tr>
               ) : (
-                ubicaciones.map((u) => (
+                paginatedData.map((u) => (
                   <tr key={u.id_ubicacion} className="hover:bg-gray-50/70 transition-colors">
                     <td className="px-5 py-4 font-mono text-xs text-gray-500">{u.id_ubicacion}</td>
                     <td className="px-5 py-4">
@@ -223,6 +238,11 @@ export default function UbicacionesPage() {
               )}
             </tbody>
           </table>
+          <Pagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            onPageChange={setCurrentPage}
+          />
         </div>
       )}
 

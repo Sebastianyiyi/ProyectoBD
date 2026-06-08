@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { DataSource, Repository } from 'typeorm';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Mantenimiento } from './mantenimiento.entity';
@@ -25,19 +25,19 @@ export class MantenimientosService {
   async findAll(filtros: FiltrosMantenimiento = {}) {
     let sql = `
       SELECT
-        m.id_mantenimiento                                  AS "idMantenimiento",
-        a.id_articulo                                       AS "idArticulo",
-        a.nombre                                            AS "nombreArticulo",
-        a.codigo_institucional                              AS "codigoArticulo",
-        tm.nombre                                           AS "tipoMantenimiento",
-        em.nombre                                           AS "estadoMantenimiento",
-        m.id_estado_mantenimiento                           AS "idEstado",
+        m.id_mantenimiento                                  AS "id_mantenimiento",
+        a.id_articulo                                       AS "id_articulo",
+        a.nombre                                            AS "articulo_nombre",
+        a.codigo_institucional                              AS "codigo_institucional",
+        tm.nombre                                           AS "tipo_mantenimiento",
+        em.nombre                                           AS "estado",
+        m.id_estado_mantenimiento                           AS "id_estado_mantenimiento",
         m.descripcion                                       AS "descripcion",
-        m.tecnico_proveedor                                 AS "tecnicoProveedor",
+        m.tecnico_proveedor                                 AS "tecnico_asignado",
         m.costo                                             AS "costo",
-        TO_CHAR(m.fecha_inicio, 'YYYY-MM-DD')               AS "fechaInicio",
-        TO_CHAR(m.fecha_fin, 'YYYY-MM-DD')                  AS "fechaFin",
-        TO_CHAR(m.proximo_mantenimiento, 'YYYY-MM-DD')      AS "proximoMantenimiento"
+        TO_CHAR(m.fecha_inicio, 'YYYY-MM-DD')               AS "fecha_inicio",
+        TO_CHAR(m.fecha_fin, 'YYYY-MM-DD')                  AS "fecha_fin",
+        TO_CHAR(m.proximo_mantenimiento, 'YYYY-MM-DD')      AS "proximo_mantenimiento"
       FROM mantenimiento m
       INNER JOIN articulo a             ON a.id_articulo = m.id_articulo
       INNER JOIN tipo_mantenimiento tm  ON tm.id_tipo_mantenimiento = m.id_tipo_mantenimiento
@@ -76,6 +76,15 @@ export class MantenimientosService {
   }
 
   async create(dto: CreateMantenimientoDto) {
+    // Validar que el artículo esté disponible (1)
+    const artRows = await this.dataSource.query('SELECT id_estado_articulo FROM articulo WHERE id_articulo = $1 FOR UPDATE', [dto.id_articulo]);
+    if (!artRows.length || artRows[0].id_estado_articulo !== 1) {
+      throw new BadRequestException(`El equipo #${dto.id_articulo} no está disponible para mantenimiento. Debe estar Disponible (1).`);
+    }
+
+    // Poner el artículo en mantenimiento (3)
+    await this.dataSource.query('UPDATE articulo SET id_estado_articulo = 3 WHERE id_articulo = $1', [dto.id_articulo]);
+
     const m = this.repo.create({
       id_articulo: dto.id_articulo,
       id_tipo_mantenimiento: dto.id_tipo_mantenimiento,
@@ -120,6 +129,24 @@ export class MantenimientosService {
     if (dto.proximo_mantenimiento !== undefined)
       m.proximo_mantenimiento = dto.proximo_mantenimiento;
 
+    // Liberar el artículo (1 = Disponible)
+    await this.dataSource.query('UPDATE articulo SET id_estado_articulo = 1 WHERE id_articulo = $1', [m.id_articulo]);
+
+    return this.repo.save(m);
+  }
+
+  async iniciar(id: number) {
+    const m = await this.findOne(id);
+    m.id_estado_mantenimiento = 2; // En Progreso
+    return this.repo.save(m);
+  }
+
+  async cancelar(id: number) {
+    const m = await this.findOne(id);
+    m.id_estado_mantenimiento = 4; // Cancelado
+    // Liberar el artículo
+    await this.dataSource.query('UPDATE articulo SET id_estado_articulo = 1 WHERE id_articulo = $1', [m.id_articulo]);
+    m.fecha_fin = new Date().toISOString().split('T')[0];
     return this.repo.save(m);
   }
 }

@@ -1,53 +1,61 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, useMemo } from 'react';
 import type { FormEvent, ChangeEvent } from 'react';
 import { api } from '@/lib/api';
+import { Pagination } from '@/components/ui/Pagination';
 
-// Tipos estructurados según la lógica relacional
 type Mantenimiento = {
   id_mantenimiento: number;
   id_articulo: number;
   articulo_nombre: string;
   codigo_institucional: string;
-  tipo_mantenimiento: 'Preventivo' | 'Correctivo';
+  tipo_mantenimiento: string;
   descripcion: string;
   fecha_inicio: string;
   fecha_fin: string | null;
   costo: number | null;
-  estado: string; // Ej: En proceso, Finalizado
+  estado: string;
   tecnico_asignado: string | null;
 };
 
-// Tipos auxiliares para los selects del formulario
-type ArticuloSimple = { id_articulo: number; nombre: string; codigo_institucional: string };
-type UsuarioSimple = { id_usuario: number; nombres: string; apellidos: string };
+type ArticuloSimple = { id_articulo: number; nombre: string; codigo_institucional: string; id_estado_articulo: number; id_categoria: number };
+type UsuarioSimple = { id_usuario: number; nombres: string; apellidos: string; id_rol: number };
+// Tipos dinámicos para los catálogos
+type CatalogoItem = { id_tipo_mantenimiento?: number; id_estado_mantenimiento?: number; id?: number; nombre: string };
 
 export default function MantenimientosPage() {
   const [mantenimientos, setMantenimientos] = useState<Mantenimiento[]>([]);
   const [articulos, setArticulos] = useState<ArticuloSimple[]>([]);
   const [tecnicos, setTecnicos] = useState<UsuarioSimple[]>([]);
+  const [categorias, setCategorias] = useState<CatalogoItem[]>([]);
+
+  // Nuevos estados para catálogos desde la BD
+  const [tiposMant, setTiposMant] = useState<CatalogoItem[]>([]);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
-  // Filtros
   const [busqueda, setBusqueda] = useState('');
   const [filtroTipo, setFiltroTipo] = useState('');
   const [filtroEstado, setFiltroEstado] = useState('');
 
-  // Estados Modal
   const [showModal, setShowModal] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
   const [formError, setFormError] = useState('');
+  const [filtroCategoriaForm, setFiltroCategoriaForm] = useState<number | ''>('');
+  const [confirmAction, setConfirmAction] = useState<{ id: number, action: 'iniciar' | 'cerrar' | 'cancelar', message: string } | null>(null);
+
+  // Paginación
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
 
   const [formData, setFormData] = useState({
     id_articulo: '',
-    tipo_mantenimiento: 'Preventivo',
+    id_tipo_mantenimiento: '',
     descripcion: '',
     fecha_inicio: new Date().toISOString().split('T')[0],
     costo: '',
-    id_tecnico: '',
-    estado: 'En proceso'
+    tecnico_proveedor: ''
   });
 
   const fetchData = useCallback(async () => {
@@ -55,23 +63,23 @@ export default function MantenimientosPage() {
       setLoading(true);
       setError('');
 
-      const [resMant, resArt, resUsu] = await Promise.all([
-        api.get<Mantenimiento[]>('/mantenimientos', {
-          params: { busqueda, tipo: filtroTipo, estado: filtroEstado }
-        }),
-        api.get<ArticuloSimple[]>('/articulos'), // Para el select de equipos
-        api.get<UsuarioSimple[]>('/usuarios')    // Para asignar técnicos
+      const [resMant, resArt, resUsu, resTipos, resCat] = await Promise.all([
+        api.get<Mantenimiento[]>('/mantenimientos', { params: { busqueda, tipo: filtroTipo, estado: filtroEstado } }),
+        api.get<ArticuloSimple[]>('/articulos'),
+        api.get<UsuarioSimple[]>('/usuarios'),
+        api.get<CatalogoItem[]>('/catalogos/tipos-mantenimiento'),
+        api.get<CatalogoItem[]>('/catalogos/categorias')
       ]);
 
       setMantenimientos((resMant.data as any).value ?? resMant.data);
       setArticulos((resArt.data as any).value ?? resArt.data);
-
-      // Filtramos solo a los usuarios que tengan rol de técnico o admin si tu BD lo permite, 
-      // por ahora cargamos todos para el ejemplo.
-      setTecnicos((resUsu.data as any).value ?? resUsu.data);
+      const allUsers = (resUsu.data as any).value ?? resUsu.data;
+      setTecnicos(allUsers.filter((u: UsuarioSimple) => u.id_rol === 1 || u.id_rol === 2));
+      setTiposMant((resTipos.data as any).value ?? resTipos.data);
+      setCategorias((resCat.data as any).map((c: any) => ({ id: c.id_categoria, nombre: c.nombre })));
     } catch (err) {
       console.error('Error al cargar mantenimientos:', err);
-      setError('No se pudo conectar con la base de datos para cargar el historial de mantenimientos.');
+      setError('No se pudo conectar con la base de datos.');
     } finally {
       setLoading(false);
     }
@@ -81,6 +89,16 @@ export default function MantenimientosPage() {
     void fetchData();
   }, [fetchData]);
 
+  const totalPages = Math.ceil(mantenimientos.length / itemsPerPage);
+  const paginatedData = useMemo(() => {
+    const start = (currentPage - 1) * itemsPerPage;
+    return mantenimientos.slice(start, start + itemsPerPage);
+  }, [mantenimientos, currentPage]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [busqueda, filtroTipo, filtroEstado]);
+
   const handleInputChange = (e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
@@ -88,8 +106,8 @@ export default function MantenimientosPage() {
 
   const handleCrearMantenimiento = async (e: FormEvent) => {
     e.preventDefault();
-    if (!formData.id_articulo || !formData.descripcion || !formData.fecha_inicio) {
-      setFormError('Por favor, completa los campos obligatorios del equipo y la descripción.');
+    if (!formData.id_articulo || !formData.id_tipo_mantenimiento || !formData.descripcion || !formData.fecha_inicio) {
+      setFormError('Por favor, completa los campos obligatorios (*).');
       return;
     }
 
@@ -99,172 +117,102 @@ export default function MantenimientosPage() {
     try {
       const payload = {
         id_articulo: Number(formData.id_articulo),
-        tipo_mantenimiento: formData.tipo_mantenimiento,
+        id_tipo_mantenimiento: Number(formData.id_tipo_mantenimiento),
+        id_estado_mantenimiento: 1, // Siempre Programado
         descripcion: formData.descripcion,
         fecha_inicio: formData.fecha_inicio,
         costo: formData.costo ? Number(formData.costo) : undefined,
-        id_tecnico: formData.id_tecnico ? Number(formData.id_tecnico) : undefined,
-        estado: formData.estado
+        tecnico_proveedor: formData.tecnico_proveedor || undefined,
       };
 
       await api.post('/mantenimientos', payload);
       setSuccess('Orden de mantenimiento registrada exitosamente.');
       setShowModal(false);
       setFormData({
-        id_articulo: '', tipo_mantenimiento: 'Preventivo', descripcion: '',
-        fecha_inicio: new Date().toISOString().split('T')[0], costo: '', id_tecnico: '', estado: 'En proceso'
+        id_articulo: '', id_tipo_mantenimiento: '', descripcion: '',
+        fecha_inicio: new Date().toISOString().split('T')[0], costo: '', tecnico_proveedor: ''
       });
       setTimeout(() => setSuccess(''), 5000);
-      void fetchData();
+      await fetchData();
     } catch (err: any) {
       console.error(err);
-      setFormError(err.response?.data?.message || 'Error al registrar el mantenimiento. Verifica los datos.');
+      setFormError(err.response?.data?.message || 'Error al registrar el mantenimiento.');
     } finally {
       setActionLoading(false);
     }
   };
 
-  const finalizarMantenimiento = async (id: number) => {
-    if (!window.confirm('¿Confirmas que el equipo ha sido reparado y está listo para uso?')) return;
-
+  const accion = async (id: number, action: 'iniciar' | 'cerrar' | 'cancelar') => {
+    setActionLoading(true);
     try {
-      await api.patch(`/mantenimientos/${id}/finalizar`);
-      setSuccess('Mantenimiento finalizado. El equipo vuelve a estar disponible.');
+      const body = action === 'cerrar' ? { fecha_fin: new Date().toISOString().split('T')[0] } : {};
+      await api.patch(`/mantenimientos/${id}/${action}`, body);
+      setSuccess(`Orden de mantenimiento actualizada exitosamente.`);
       setTimeout(() => setSuccess(''), 4000);
-      void fetchData();
+      await fetchData();
     } catch (err) {
-      setError('No se pudo actualizar el estado del mantenimiento.');
-      setTimeout(() => setError(''), 4000);
+      setError(`Error al ejecutar acción: ${action}.`);
+    } finally {
+      setActionLoading(false);
     }
   };
 
+  // Funciones auxiliares para obtener IDs de los catálogos dinámicos
+  const getCatId = (cat: any) => cat.id_tipo_mantenimiento || cat.id_estado_mantenimiento || cat.id;
+
   return (
     <div className="p-6 space-y-6 animate-in fade-in duration-500">
-      {/* Encabezado */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div className="space-y-1">
+        <div>
           <h1 className="text-3xl font-bold tracking-tight text-gray-900">Control de Mantenimientos</h1>
-          <p className="text-sm text-gray-500">
-            Registro de intervenciones técnicas, reparaciones y costos asociados.
-          </p>
+          <p className="text-sm text-gray-500">Registro de intervenciones técnicas, reparaciones y costos.</p>
         </div>
         <button
           onClick={() => setShowModal(true)}
-          className="flex items-center justify-center gap-2 rounded-xl bg-red-600 px-5 py-2.5 text-sm font-semibold text-white shadow-md transition hover:bg-red-700 active:scale-95"
+          className="flex items-center gap-2 rounded-xl bg-red-600 px-5 py-2.5 text-sm font-semibold text-white shadow-md hover:bg-red-700"
         >
           + Nueva Orden Técnica
         </button>
       </div>
 
-      {/* Alertas */}
-      {success && (
-        <div className="rounded-2xl border border-green-200 bg-green-50 p-4 text-sm text-green-700 shadow-sm">
-          {success}
-        </div>
-      )}
-      {error && (
-        <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 shadow-sm">
-          {error}
-        </div>
-      )}
+      {success && <div className="rounded-xl border border-green-200 bg-green-50 p-4 text-sm text-green-700">{success}</div>}
+      {error && <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div>}
 
-      {/* Filtros */}
-      <div className="rounded-2xl border bg-white p-5 shadow-sm flex flex-wrap gap-4 items-center">
-        <input
-          type="text"
-          value={busqueda}
-          onChange={(e) => setBusqueda(e.target.value)}
-          placeholder="Buscar por equipo o código..."
-          className="h-10 flex-1 min-w-[250px] rounded-xl border px-4 text-sm outline-none focus:ring-2 focus:ring-red-200 transition-all"
-        />
-        <select
-          value={filtroTipo}
-          onChange={(e) => setFiltroTipo(e.target.value)}
-          className="h-10 rounded-xl border bg-white px-4 text-sm outline-none focus:ring-2 focus:ring-red-200 transition-all"
-        >
-          <option value="">Todos los tipos</option>
-          <option value="Preventivo">Preventivo</option>
-          <option value="Correctivo">Correctivo</option>
-        </select>
-        <select
-          value={filtroEstado}
-          onChange={(e) => setFiltroEstado(e.target.value)}
-          className="h-10 rounded-xl border bg-white px-4 text-sm outline-none focus:ring-2 focus:ring-red-200 transition-all"
-        >
-          <option value="">Todos los estados</option>
-          <option value="En proceso">En proceso</option>
-          <option value="Finalizado">Finalizado</option>
-        </select>
-        <button
-          onClick={() => { setBusqueda(''); setFiltroTipo(''); setFiltroEstado(''); }}
-          className="h-10 rounded-xl border px-5 text-sm font-medium text-gray-600 hover:bg-gray-50 transition"
-        >
-          Limpiar
-        </button>
-      </div>
-
-      {/* Tabla de Mantenimientos */}
       {loading ? (
-        <div className="rounded-2xl border bg-white p-10 text-center text-sm text-gray-500 shadow-sm">
-          Cargando registros técnicos...
-        </div>
+        <div className="p-10 text-center text-gray-500">Cargando registros...</div>
       ) : (
         <div className="overflow-x-auto rounded-2xl border bg-white shadow-sm">
-          <table className="w-full min-w-[1000px] border-collapse text-sm">
-            <thead>
-              <tr className="border-b bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
+          <table className="w-full text-sm text-left">
+            <thead className="bg-gray-50 text-xs font-semibold text-gray-600 uppercase">
+              <tr>
                 <th className="px-5 py-4">Equipo Intervenido</th>
                 <th className="px-5 py-4">Tipo</th>
-                <th className="px-5 py-4">Descripción de Falla</th>
+                <th className="px-5 py-4">Descripción</th>
                 <th className="px-5 py-4">Técnico Asignado</th>
                 <th className="px-5 py-4">Costo</th>
-                <th className="px-5 py-4">Estado</th>
                 <th className="px-5 py-4 text-right">Acciones</th>
               </tr>
             </thead>
             <tbody className="divide-y text-gray-700">
-              {mantenimientos.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="px-5 py-12 text-center text-gray-500">
-                    No se encontraron registros de mantenimiento.
-                  </td>
-                </tr>
+              {paginatedData.length === 0 ? (
+                <tr><td colSpan={6} className="px-5 py-8 text-center text-gray-500">No hay registros.</td></tr>
               ) : (
-                mantenimientos.map((m) => (
-                  <tr key={m.id_mantenimiento} className="hover:bg-gray-50/70 transition-colors">
-                    <td className="px-5 py-4">
-                      <p className="font-semibold text-gray-900">{m.articulo_nombre}</p>
-                      <p className="text-xs font-mono text-gray-500 mt-0.5">{m.codigo_institucional}</p>
-                    </td>
-                    <td className="px-5 py-4">
-                      <span className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-semibold ring-1 ring-inset ${m.tipo_mantenimiento === 'Preventivo' ? 'bg-blue-50 text-blue-700 ring-blue-700/10' : 'bg-orange-50 text-orange-700 ring-orange-700/10'
-                        }`}>
-                        {m.tipo_mantenimiento}
-                      </span>
-                    </td>
-                    <td className="px-5 py-4 max-w-xs truncate text-gray-600" title={m.descripcion}>
-                      {m.descripcion}
-                    </td>
-                    <td className="px-5 py-4 text-gray-600">{m.tecnico_asignado || <span className="italic text-gray-400">Externo / Sin asignar</span>}</td>
-                    <td className="px-5 py-4 font-medium text-gray-900">
-                      {m.costo ? `$${Number(m.costo).toFixed(2)}` : '-'}
-                    </td>
-                    <td className="px-5 py-4">
-                      <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium shadow-sm ${m.estado === 'Finalizado'
-                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                        : 'bg-amber-50 text-amber-700 border-amber-200'
-                        }`}>
-                        {m.estado}
-                      </span>
-                    </td>
-                    <td className="px-5 py-4 text-right">
-                      {m.estado !== 'Finalizado' && (
-                        <button
-                          onClick={() => finalizarMantenimiento(m.id_mantenimiento)}
-                          className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white transition-all hover:bg-emerald-700 active:scale-95 shadow-sm"
-                        >
-                          Marcar Listo
-                        </button>
+                paginatedData.map((m) => (
+                  <tr key={m.id_mantenimiento} className="hover:bg-gray-50">
+                    <td className="px-5 py-4 font-semibold">{m.articulo_nombre} <span className="block text-xs font-normal text-gray-500">{m.codigo_institucional}</span></td>
+                    <td className="px-5 py-4">{m.tipo_mantenimiento}</td>
+                    <td className="px-5 py-4 max-w-xs truncate">{m.descripcion}</td>
+                    <td className="px-5 py-4">{m.tecnico_asignado || '-'}</td>
+                    <td className="px-5 py-4">{m.costo ? `$${Number(m.costo).toFixed(2)}` : '-'}</td>
+                    <td className="px-5 py-4 text-right space-x-2 whitespace-nowrap">
+                      {m.estado === 'Programado' && (
+                        <>
+                          <button onClick={() => setConfirmAction({ id: m.id_mantenimiento, action: 'iniciar', message: '¿Estás seguro de iniciar este mantenimiento?' })} disabled={actionLoading} className="rounded bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-blue-700">Iniciar</button>
+                          <button onClick={() => setConfirmAction({ id: m.id_mantenimiento, action: 'cancelar', message: '¿Estás seguro de cancelar esta orden de mantenimiento?' })} disabled={actionLoading} className="rounded bg-red-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-red-700">Cancelar</button>
+                        </>
+                      )}
+                      {m.estado === 'En Progreso' && (
+                        <button onClick={() => setConfirmAction({ id: m.id_mantenimiento, action: 'cerrar', message: '¿Confirmas que el equipo ha sido reparado y devuelto?' })} disabled={actionLoading} className="rounded bg-green-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-green-700">Marcar Listo</button>
                       )}
                     </td>
                   </tr>
@@ -272,126 +220,105 @@ export default function MantenimientosPage() {
               )}
             </tbody>
           </table>
+          <Pagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            onPageChange={setCurrentPage}
+          />
         </div>
       )}
 
-      {/* Modal Nueva Orden Técnica */}
       {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 overflow-y-auto">
-          <div className="w-full max-w-xl rounded-2xl bg-white p-6 shadow-xl border animate-in fade-in zoom-in-95 duration-200">
-            <div className="flex items-center justify-between border-b pb-3 mb-4">
-              <h2 className="text-xl font-bold text-gray-900">Nueva Orden de Mantenimiento</h2>
-              <button onClick={() => { setShowModal(false); setFormError(''); }} className="text-gray-400 hover:text-gray-600 transition text-lg">✕</button>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-xl rounded-2xl bg-white p-6 shadow-xl">
+            <div className="flex justify-between border-b pb-3 mb-4">
+              <h2 className="text-lg font-bold">Nueva Orden Técnica</h2>
+              <button onClick={() => setShowModal(false)}>✕</button>
             </div>
+            {formError && <p className="mb-4 text-sm text-red-600">{formError}</p>}
 
-            {formError && (
-              <p className="mb-4 rounded-xl bg-red-50 border border-red-200 px-4 py-2.5 text-sm text-red-700">{formError}</p>
-            )}
+            <form onSubmit={handleCrearMantenimiento} className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-xs font-bold text-gray-700">Filtrar Categoría</label>
+                  <select value={filtroCategoriaForm} onChange={(e) => setFiltroCategoriaForm(e.target.value ? Number(e.target.value) : '')} className="w-full border rounded-xl p-2 text-sm mt-1">
+                    <option value="">Todas las categorías</option>
+                    {categorias.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-gray-700">Equipo *</label>
+                  <select name="id_articulo" value={formData.id_articulo} onChange={handleInputChange} className="w-full border rounded-xl p-2 text-sm mt-1" required>
+                    <option value="">Selecciona equipo...</option>
+                    {articulos.filter(a => filtroCategoriaForm === '' || a.id_categoria === filtroCategoriaForm).map(a => {
+                      const isDisponible = a.id_estado_articulo === 1;
+                      const statusText = a.id_estado_articulo === 2 ? ' (Prestado)' : a.id_estado_articulo === 3 ? ' (En Mantenimiento)' : '';
+                      return (
+                        <option key={a.id_articulo} value={a.id_articulo} disabled={!isDisponible}>
+                          {a.codigo_institucional} - {a.nombre}{statusText}
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
+              </div>
 
-            <form onSubmit={handleCrearMantenimiento} className="space-y-5">
               <div>
-                <label className="mb-1.5 block text-xs font-semibold text-gray-700 uppercase tracking-wider">Equipo a intervenir *</label>
-                <select
-                  name="id_articulo"
-                  value={formData.id_articulo}
-                  onChange={handleInputChange}
-                  className="w-full h-10 rounded-xl border bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-red-200 transition-all"
-                  required
-                >
-                  <option value="">Selecciona el equipo del inventario...</option>
-                  {articulos.map((a) => (
-                    <option key={a.id_articulo} value={a.id_articulo}>
-                      {a.codigo_institucional} - {a.nombre}
-                    </option>
-                  ))}
+                <label className="text-xs font-bold text-gray-700">Tipo de Trabajo *</label>
+                <select name="id_tipo_mantenimiento" value={formData.id_tipo_mantenimiento} onChange={handleInputChange} className="w-full border rounded-xl p-2 text-sm mt-1" required>
+                  <option value="">Selecciona tipo...</option>
+                  {tiposMant.map(t => <option key={getCatId(t)} value={getCatId(t)}>{t.nombre}</option>)}
                 </select>
               </div>
 
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div>
-                  <label className="mb-1.5 block text-xs font-semibold text-gray-700 uppercase tracking-wider">Tipo de Trabajo *</label>
-                  <select
-                    name="tipo_mantenimiento"
-                    value={formData.tipo_mantenimiento}
-                    onChange={handleInputChange}
-                    className="w-full h-10 rounded-xl border bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-red-200 transition-all"
-                  >
-                    <option value="Preventivo">Mantenimiento Preventivo</option>
-                    <option value="Correctivo">Mantenimiento Correctivo (Falla)</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="mb-1.5 block text-xs font-semibold text-gray-700 uppercase tracking-wider">Técnico Responsable</label>
-                  <select
-                    name="id_tecnico"
-                    value={formData.id_tecnico}
-                    onChange={handleInputChange}
-                    className="w-full h-10 rounded-xl border bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-red-200 transition-all"
-                  >
-                    <option value="">Tercerizado / Externo</option>
-                    {tecnicos.map((t) => (
-                      <option key={t.id_usuario} value={t.id_usuario}>{t.nombres} {t.apellidos}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
               <div>
-                <label className="mb-1.5 block text-xs font-semibold text-gray-700 uppercase tracking-wider">Diagnóstico / Descripción *</label>
-                <textarea
-                  name="descripcion"
-                  value={formData.descripcion}
-                  onChange={handleInputChange}
-                  rows={3}
-                  className="w-full rounded-xl border p-3 text-sm outline-none focus:ring-2 focus:ring-red-200 transition-all"
-                  placeholder="Describe la falla reportada o el trabajo a realizar..."
-                  required
-                />
+                <label className="text-xs font-bold text-gray-700">Descripción Falla *</label>
+                <textarea name="descripcion" value={formData.descripcion} onChange={handleInputChange} className="w-full border rounded-xl p-2 text-sm mt-1" required />
               </div>
 
-              <div className="grid gap-4 sm:grid-cols-2">
+              <div className="grid grid-cols-3 gap-4">
                 <div>
-                  <label className="mb-1.5 block text-xs font-semibold text-gray-700 uppercase tracking-wider">Fecha de Inicio *</label>
-                  <input
-                    type="date"
-                    name="fecha_inicio"
-                    value={formData.fecha_inicio}
-                    onChange={handleInputChange}
-                    className="w-full h-10 rounded-xl border px-3 text-sm outline-none focus:ring-2 focus:ring-red-200 transition-all"
-                    required
-                  />
+                  <label className="text-xs font-bold text-gray-700">Costo Estimado</label>
+                  <input type="number" name="costo" value={formData.costo} onChange={handleInputChange} className="w-full border rounded-xl p-2 text-sm mt-1" />
                 </div>
-                <div>
-                  <label className="mb-1.5 block text-xs font-semibold text-gray-700 uppercase tracking-wider">Costo Estimado ($)</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    name="costo"
-                    value={formData.costo}
-                    onChange={handleInputChange}
-                    placeholder="0.00"
-                    className="w-full h-10 rounded-xl border px-3 text-sm outline-none focus:ring-2 focus:ring-red-200 transition-all"
-                  />
+                <div className="col-span-2">
+                  <label className="text-xs font-bold text-gray-700">Técnico Asignado</label>
+                  <select name="tecnico_proveedor" value={formData.tecnico_proveedor} onChange={handleInputChange} className="w-full border rounded-xl p-2 text-sm mt-1">
+                    <option value="">Ninguno / Externo</option>
+                    {tecnicos.map(t => <option key={t.id_usuario} value={`${t.nombres} ${t.apellidos}`}>{t.nombres} {t.apellidos}</option>)}
+                  </select>
                 </div>
               </div>
 
-              <div className="mt-6 flex gap-3 justify-end border-t pt-4">
-                <button
-                  type="button"
-                  onClick={() => { setShowModal(false); setFormError(''); }}
-                  className="rounded-xl border px-5 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50 transition"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={actionLoading}
-                  className="rounded-xl bg-red-600 px-5 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-red-700 disabled:opacity-60"
-                >
-                  {actionLoading ? 'Guardando...' : 'Generar Orden'}
-                </button>
-              </div>
+              <div className="flex justify-end pt-4"><button type="submit" className="bg-red-600 text-white px-5 py-2 rounded-xl text-sm font-bold">Guardar</button></div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Confirmación */}
+      {confirmAction && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm transition-all animate-fade-in">
+          <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl text-center">
+            <h3 className="text-lg font-bold text-gray-900 mb-2">Confirmar Acción</h3>
+            <p className="text-sm text-gray-600 mb-6">{confirmAction.message}</p>
+            <div className="flex justify-center gap-3">
+              <button 
+                onClick={() => setConfirmAction(null)} 
+                className="rounded-xl px-4 py-2 text-sm font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 transition"
+              >
+                Cancelar
+              </button>
+              <button 
+                onClick={() => {
+                  void accion(confirmAction.id, confirmAction.action);
+                  setConfirmAction(null);
+                }} 
+                className="rounded-xl px-4 py-2 text-sm font-semibold text-white bg-red-600 hover:bg-red-700 transition shadow-sm"
+              >
+                Aceptar
+              </button>
+            </div>
           </div>
         </div>
       )}

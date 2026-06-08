@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/button';
+import { Pagination } from '@/components/ui/Pagination';
 
 type Articulo = {
   id_articulo: number;
@@ -62,6 +63,10 @@ export default function InventarioPage() {
   const [idEstado, setIdEstado] = useState('');
   const [idUbicacion, setIdUbicacion] = useState('');
   const [idResponsable, setIdResponsable] = useState('');
+
+  // Paginación
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -151,13 +156,18 @@ export default function InventarioPage() {
   }, [ubicaciones]);
 
   const usuarioMap = useMemo(() => {
-    return new Map(
-      usuarios.map((item) => [
-        item.id_usuario,
-        `${item.nombres} ${item.apellidos}`,
-      ]),
-    );
+    return new Map(usuarios.map((item) => [item.id_usuario, `${item.nombres} ${item.apellidos}`]));
   }, [usuarios]);
+
+  const totalPages = Math.ceil(articulos.length / itemsPerPage);
+  const paginatedData = useMemo(() => {
+    const start = (currentPage - 1) * itemsPerPage;
+    return articulos.slice(start, start + itemsPerPage);
+  }, [articulos, currentPage]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [busqueda, idCategoria, idEstado, idUbicacion, idResponsable]);
 
   const handleBuscar = (e: FormEvent) => {
     e.preventDefault();
@@ -374,14 +384,14 @@ export default function InventarioPage() {
             </thead>
 
             <tbody className="divide-y text-gray-700">
-              {articulos.length === 0 ? (
+              {paginatedData.length === 0 ? (
                 <tr>
                   <td colSpan={12} className="px-4 py-10 text-center text-muted-foreground">
                     No se encontraron artículos con los filtros aplicados.
                   </td>
                 </tr>
               ) : (
-                articulos.map((articulo) => (
+                paginatedData.map((articulo) => (
                   <tr key={articulo.id_articulo} className="hover:bg-gray-50/70 transition-colors">
                     <td className="px-4 py-3 font-mono text-xs text-gray-500">{articulo.id_articulo}</td>
                     <td className="px-4 py-3 font-medium text-gray-900">{articulo.codigo_institucional}</td>
@@ -416,6 +426,11 @@ export default function InventarioPage() {
               )}
             </tbody>
           </table>
+          <Pagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            onPageChange={setCurrentPage}
+          />
         </div>
       )}
 

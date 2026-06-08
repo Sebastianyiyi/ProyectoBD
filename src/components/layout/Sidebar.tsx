@@ -22,8 +22,7 @@ const navItems = [
   { to: '/movimientos',    label: 'Movimientos',      icon: ArrowLeftRight },
   { to: '/ubicaciones',    label: 'Ubicaciones',      icon: MapPin },
   { to: '/usuarios',       label: 'Usuarios',         icon: Users },
-  { to: '/auditoria',      label: 'Auditoría',        icon: ShieldCheck },
-  { to: '/reportes',       label: 'Reportes',         icon: BarChart2 },
+  { to: '/reportes',       label: 'Reportes y Auditoría', icon: BarChart2 },
 ]
 
 export default function Sidebar() {

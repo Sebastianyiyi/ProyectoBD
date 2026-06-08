@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, useMemo } from 'react';
 import { api } from '@/lib/api';
+import { Pagination } from '@/components/ui/Pagination';
 
 type Movimiento = {
   idMovimiento: number;
@@ -15,8 +16,8 @@ type Movimiento = {
   fechaMovimiento: string;
 };
 
-type CatItem = { id: number; nombre: string };
-type Articulo = { id_articulo: number; nombre: string; codigo_institucional: string };
+type CatItem = { id?: number; id_categoria?: number; nombre: string };
+type Articulo = { id_articulo: number; nombre: string; codigo_institucional: string; id_categoria: number; id_ubicacion: number | null };
 type Ubicacion = { id_ubicacion: number; nombre: string };
 type Usuario = { id_usuario: number; nombres: string; apellidos: string; cedula: string };
 
@@ -41,6 +42,13 @@ export default function MovimientosPage() {
   const [fObservacion, setFObservacion] = useState('');
   const [formError, setFormError] = useState('');
   const [busqueda, setBusqueda] = useState('');
+  
+  // Paginación
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
+  
+  const [categorias, setCategorias] = useState<CatItem[]>([]);
+  const [filtroCategoriaForm, setFiltroCategoriaForm] = useState<number | ''>('');
 
   const cargar = useCallback(async () => {
     try {
@@ -55,18 +63,30 @@ export default function MovimientosPage() {
 
   useEffect(() => { void cargar(); }, [cargar]);
 
+  const totalPages = Math.ceil(movimientos.length / itemsPerPage);
+  const paginatedData = useMemo(() => {
+    const start = (currentPage - 1) * itemsPerPage;
+    return movimientos.slice(start, start + itemsPerPage);
+  }, [movimientos, currentPage]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [busqueda]);
+
   useEffect(() => {
     Promise.all([
       api.get<Articulo[]>('/articulos'),
       api.get<Ubicacion[]>('/ubicaciones'),
       api.get<CatItem[]>('/catalogos/tipos-movimiento'),
       api.get<Usuario[]>('/usuarios').then(r => r.data).catch(() => []),
-    ]).then(([a, u, t, us]) => {
-      setArticulos(a.data);
-      setUbicaciones(u.data);
-      setTiposMov(t.data);
+      api.get<CatItem[]>('/catalogos/categorias').catch(() => ({ data: [] }))
+    ]).then(([a, u, t, us, c]) => {
+      setArticulos((a.data as any).value ?? a.data);
+      setUbicaciones((u.data as any).value ?? u.data);
+      setTiposMov((t.data as any).value ?? t.data);
       // @ts-ignore
       setUsuariosList(us.value ?? us);
+      setCategorias((c.data as any).value ?? c.data);
     }).catch(console.error);
   }, []);
 
@@ -113,39 +133,52 @@ export default function MovimientosPage() {
         <div className="rounded-2xl border bg-white p-8 text-center text-sm text-gray-500">Cargando movimientos…</div>
       ) : (
         <div className="overflow-x-auto rounded-2xl border bg-white shadow-sm">
-          <table className="w-full min-w-[800px] border-collapse text-sm">
+          <table className="w-full min-w-[1000px] border-collapse text-sm">
             <thead>
-              <tr className="border-b bg-red-50/40 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
-                <th className="px-4 py-3">#</th>
-                <th className="px-4 py-3">Artículo</th>
-                <th className="px-4 py-3">Tipo</th>
-                <th className="px-4 py-3">Origen</th>
-                <th className="px-4 py-3">Destino</th>
-                <th className="px-4 py-3">Usuario</th>
-                <th className="px-4 py-3">Motivo</th>
-                <th className="px-4 py-3">Fecha</th>
+              <tr className="border-b bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
+                <th className="px-4 py-3.5"># ID</th>
+                <th className="px-4 py-3.5">Artículo Movido</th>
+                <th className="px-4 py-3.5">Tipo</th>
+                <th className="px-4 py-3.5">Trayecto (Origen → Destino)</th>
+                <th className="px-4 py-3.5">Usuario Responsable</th>
+                <th className="px-4 py-3.5">Motivo</th>
+                <th className="px-4 py-3.5">Fecha</th>
               </tr>
             </thead>
-            <tbody>
-              {movimientos.length === 0 ? (
-                <tr><td colSpan={8} className="px-4 py-10 text-center text-gray-400">No hay movimientos registrados.</td></tr>
-              ) : movimientos.map((m) => (
-                <tr key={m.idMovimiento} className="border-t hover:bg-red-50/20 transition-colors">
-                  <td className="px-4 py-3 font-mono text-xs text-gray-500">{m.idMovimiento}</td>
-                  <td className="px-4 py-3">
-                    <p className="font-medium">{m.nombreArticulo}</p>
-                    <p className="text-xs text-gray-400">{m.codigoArticulo}</p>
+            <tbody className="divide-y text-gray-700">
+              {paginatedData.length === 0 ? (
+                <tr><td colSpan={7} className="px-4 py-12 text-center text-gray-400">No hay movimientos registrados.</td></tr>
+              ) : paginatedData.map((m) => (
+                <tr key={m.idMovimiento} className="hover:bg-gray-50/70 transition-colors">
+                  <td className="px-4 py-4 font-mono text-xs text-gray-500">{m.idMovimiento}</td>
+                  <td className="px-4 py-4">
+                    <p className="font-semibold text-gray-900">{m.nombreArticulo}</p>
+                    <p className="text-xs font-mono text-gray-500 mt-0.5">{m.codigoArticulo}</p>
                   </td>
-                  <td className="px-4 py-3"><span className="rounded-full bg-blue-50 border border-blue-100 px-2.5 py-0.5 text-xs text-blue-700">{m.tipoMovimiento}</span></td>
-                  <td className="px-4 py-3 text-gray-500">{m.ubicacionOrigen ?? '—'}</td>
-                  <td className="px-4 py-3 font-medium text-[var(--app-text)]">{m.ubicacionDestino}</td>
-                  <td className="px-4 py-3 text-gray-600">{m.usuario}</td>
-                  <td className="px-4 py-3 text-gray-500 text-xs">{m.motivo ?? '—'}</td>
-                  <td className="px-4 py-3 text-gray-500 text-xs">{m.fechaMovimiento}</td>
+                  <td className="px-4 py-4">
+                    <span className="inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700">
+                      {m.tipoMovimiento}
+                    </span>
+                  </td>
+                  <td className="px-4 py-4">
+                    <div className="flex items-center gap-2">
+                      <span className="text-gray-500">{m.ubicacionOrigen ?? 'Sin ubicación'}</span>
+                      <span className="text-gray-400">→</span>
+                      <span className="font-semibold text-gray-900">{m.ubicacionDestino}</span>
+                    </div>
+                  </td>
+                  <td className="px-4 py-4 font-medium text-gray-800">{m.usuario}</td>
+                  <td className="px-4 py-4 text-xs text-gray-500 max-w-[200px] truncate" title={m.motivo || ''}>{m.motivo ?? '—'}</td>
+                  <td className="px-4 py-4 text-xs text-gray-500 whitespace-nowrap">{m.fechaMovimiento}</td>
                 </tr>
               ))}
             </tbody>
           </table>
+          <Pagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            onPageChange={setCurrentPage}
+          />
         </div>
       )}
 
@@ -158,26 +191,53 @@ export default function MovimientosPage() {
             </div>
             {formError && <p className="mb-3 rounded-xl bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700">{formError}</p>}
             <div className="space-y-4">
-              <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">Artículo *</label>
-                <select value={fArticulo} onChange={(e) => setFArticulo(e.target.value)} className={selectCls}>
-                  <option value="">Seleccioná un artículo</option>
-                  {articulos.map((a) => <option key={a.id_articulo} value={a.id_articulo}>{a.nombre} — {a.codigo_institucional}</option>)}
-                </select>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">Filtrar por Categoría</label>
+                  <select value={filtroCategoriaForm} onChange={(e) => setFiltroCategoriaForm(e.target.value ? Number(e.target.value) : '')} className={selectCls}>
+                    <option value="">Todas las categorías</option>
+                    {categorias.map((c) => <option key={c.id ?? c.id_categoria} value={c.id ?? c.id_categoria}>{c.nombre}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">Artículo *</label>
+                  <select value={fArticulo} onChange={(e) => { setFArticulo(e.target.value); setFUbicacionDest(''); }} className={selectCls}>
+                    <option value="">Seleccioná un artículo</option>
+                    {articulos.filter(a => filtroCategoriaForm === '' || a.id_categoria === filtroCategoriaForm).map((a) => {
+                      const ubiActual = ubicaciones.find(u => u.id_ubicacion === a.id_ubicacion)?.nombre ?? 'Sin ubicación';
+                      return (
+                        <option key={a.id_articulo} value={a.id_articulo}>
+                          {a.codigo_institucional} - {a.nombre} (Actualmente en: {ubiActual})
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
               </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">Ubicación destino *</label>
-                <select value={fUbicacionDest} onChange={(e) => setFUbicacionDest(e.target.value)} className={selectCls}>
-                  <option value="">Seleccioná ubicación</option>
-                  {ubicaciones.map((u) => <option key={u.id_ubicacion} value={u.id_ubicacion}>{u.nombre}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">Usuario responsable *</label>
-                <select value={fUsuario} onChange={(e) => setFUsuario(e.target.value)} className={selectCls}>
-                  <option value="">Seleccioná un usuario</option>
-                  {usuariosList.map((u) => <option key={u.id_usuario} value={u.id_usuario}>{u.nombres} {u.apellidos}</option>)}
-                </select>
+              
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">Ubicación destino *</label>
+                  <select value={fUbicacionDest} onChange={(e) => setFUbicacionDest(e.target.value)} className={selectCls}>
+                    <option value="">Seleccioná ubicación destino</option>
+                    {ubicaciones.map((u) => {
+                      const articuloSel = articulos.find(a => a.id_articulo === Number(fArticulo));
+                      const isCurrentLocation = articuloSel?.id_ubicacion === u.id_ubicacion;
+                      return (
+                        <option key={u.id_ubicacion} value={u.id_ubicacion} disabled={isCurrentLocation}>
+                          {u.nombre} {isCurrentLocation ? '(Ubicación actual)' : ''}
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">Usuario responsable *</label>
+                  <select value={fUsuario} onChange={(e) => setFUsuario(e.target.value)} className={selectCls}>
+                    <option value="">Seleccioná un usuario</option>
+                    {usuariosList.map((u) => <option key={u.id_usuario} value={u.id_usuario}>{u.nombres} {u.apellidos}</option>)}
+                  </select>
+                </div>
               </div>
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-700">Tipo de movimiento *</label>

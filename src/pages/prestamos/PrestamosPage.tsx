@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '@/lib/api';
 import { useAuthStore } from '@/store/authStore';
+import { Pagination } from '@/components/ui/Pagination';
+import { SearchableSelect } from '@/components/ui/SearchableSelect';
 
 type PrestamoBD = {
   idPrestamo: number;
@@ -21,7 +23,7 @@ type PrestamoBD = {
   observacion: string | null;
 };
 
-type Articulo = { id_articulo: number; nombre: string; codigo_institucional: string };
+type Articulo = { id_articulo: number; nombre: string; codigo_institucional: string; id_categoria: number; id_estado_articulo: number };
 type CatItem = { id: number; nombre: string };
 type Usuario = { id_usuario: number; nombres: string; apellidos: string; cedula: string };
 
@@ -48,6 +50,7 @@ export default function PrestamosPage() {
   const [articulos, setArticulos] = useState<Articulo[]>([]);
   const [usuariosList, setUsuariosList] = useState<Usuario[]>([]);
   const [estadosCat, setEstadosCat] = useState<CatItem[]>([]);
+  const [categorias, setCategorias] = useState<CatItem[]>([]);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -56,10 +59,16 @@ export default function PrestamosPage() {
   const [filtroEstado, setFiltroEstado] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
+  const [confirmAction, setConfirmAction] = useState<{ id: number, action: string, message: string } | null>(null);
+
+  // Paginación
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
 
   // Form nuevo préstamo
   const [formSolicitante, setFormSolicitante] = useState('');
   const [formArticulos, setFormArticulos] = useState<number[]>([]);
+  const [filtroCategoriaForm, setFiltroCategoriaForm] = useState<number | ''>('');
   const [formFechaDevolucion, setFormFechaDevolucion] = useState('');
   const [formObservacion, setFormObservacion] = useState('');
   const [formError, setFormError] = useState('');
@@ -91,37 +100,48 @@ export default function PrestamosPage() {
       api.get<Articulo[]>('/articulos'),
       api.get<CatItem[]>('/catalogos/estados-prestamo'),
       api.get<Usuario[]>('/usuarios').then(r => r.data).catch(() => []),
-    ]).then(([resArt, resEst, resUsu]) => {
+      api.get<CatItem[]>('/catalogos/categorias'),
+    ]).then(([resArt, resEst, resUsu, resCat]) => {
       setArticulos(resArt.data);
       setEstadosCat(resEst.data);
       // @ts-ignore
       setUsuariosList(resUsu.value ?? resUsu);
+      setCategorias(resCat.data.map((c: any) => ({ id: c.id_categoria, nombre: c.nombre })));
     }).catch(console.error);
   }, []);
 
   const filtrados = useMemo(() => prestamos, [prestamos]);
 
+  const totalPages = Math.ceil(filtrados.length / itemsPerPage);
+  const paginatedData = useMemo(() => {
+    const start = (currentPage - 1) * itemsPerPage;
+    return filtrados.slice(start, start + itemsPerPage);
+  }, [filtrados, currentPage]);
+
+  // Reset page when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [busqueda, filtroEstado]);
+
   // Obtener la fecha de hoy para bloquear fechas pasadas en el calendario
   const todayDate = new Date().toISOString().split('T')[0];
 
-  const accion = async (id: number, endpoint: string, body?: object) => {
-    if (endpoint === 'aprobar' && !usuario?.id_usuario) {
-      setError('Sesión inválida. Vuelve a iniciar sesión para aprobar préstamos.');
-      setTimeout(() => setError(''), 5000);
-      return;
-    }
-
+  const accion = async (id: number, endpoint: string) => {
     setActionLoading(true);
-    setError('');
-    setSuccess('');
     try {
+      let body = {};
+      // Si el endpoint es devolver/cancelar, mandamos fecha_fin
+      if (endpoint === 'devolver' || endpoint === 'cancelar') {
+        body = { fecha_fin: new Date().toISOString().split('T')[0] };
+      }
+
       await api.patch(`/prestamos/${id}/${endpoint}`, body ?? {});
       setSuccess(`Préstamo marcado como ${endpoint} exitosamente.`);
       await cargar();
-      setTimeout(() => setSuccess(''), 4000);
-    } catch {
-      setError(`Error al ejecutar acción: ${endpoint}. Verifica la integridad de los datos.`);
-      setTimeout(() => setError(''), 5000);
+      void api.get<Articulo[]>('/articulos').then(res => setArticulos(res.data));
+    } catch (err: any) {
+      console.error(err);
+      setError(err.response?.data?.message || `Error al actualizar préstamo a ${endpoint}.`);
     } finally {
       setActionLoading(false);
     }
@@ -149,8 +169,9 @@ export default function PrestamosPage() {
       setSuccess('Préstamo registrado correctamente.');
       setTimeout(() => setSuccess(''), 4000);
       await cargar();
-    } catch {
-      setFormError('Error al crear el préstamo. Verifica tu conexión o los datos ingresados.');
+      void api.get<Articulo[]>('/articulos').then(r => setArticulos(r.data)).catch(console.error);
+    } catch (err: any) {
+      setFormError(err.response?.data?.message || 'Error al crear el préstamo. Verifica tu conexión o los datos ingresados.');
     } finally {
       setActionLoading(false);
     }
@@ -239,14 +260,14 @@ export default function PrestamosPage() {
               </tr>
             </thead>
             <tbody className="divide-y text-gray-700">
-              {filtrados.length === 0 ? (
+              {paginatedData.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="px-4 py-12 text-center text-muted-foreground">
                     No se encontraron préstamos activos.
                   </td>
                 </tr>
               ) : (
-                filtrados.map((p) => (
+                paginatedData.map((p) => (
                   <tr key={`${p.idPrestamo}-${p.idArticulo}`} className="hover:bg-gray-50/70 transition-colors">
                     <td className="px-4 py-4 font-mono text-xs text-gray-500">{p.idPrestamo}</td>
                     <td className="px-4 py-4">
@@ -261,27 +282,30 @@ export default function PrestamosPage() {
                     <td className="px-4 py-4"><Badge estado={p.estado} /></td>
                     <td className="px-4 py-4">{p.fechaSolicitud ?? '-'}</td>
                     <td className="px-4 py-4">{p.fechaPrevistaDevolucion || '-'}</td>
-                    <td className="px-4 py-4">
-                      <div className="flex flex-wrap gap-2">
-                        {p.estado === 'Pendiente' && (
-                          <>
-                            <ActionBtn label="Aprobar" color="bg-blue-600 hover:bg-blue-700" disabled={actionLoading} onClick={() => accion(p.idPrestamo, 'aprobar', { id_aprobador: usuario?.id_usuario })} />
-                            <ActionBtn label="Cancelar" color="bg-red-500 hover:bg-red-600" disabled={actionLoading} onClick={() => accion(p.idPrestamo, 'cancelar')} />
-                          </>
-                        )}
-                        {p.estado === 'Aprobado' && (
-                          <ActionBtn label="Marcar Entregado" color="bg-purple-600 hover:bg-purple-700" disabled={actionLoading} onClick={() => accion(p.idPrestamo, 'entregar')} />
-                        )}
-                        {p.estado === 'Entregado' && (
-                          <ActionBtn label="Recibir Devolución" color="bg-emerald-600 hover:bg-emerald-700" disabled={actionLoading} onClick={() => accion(p.idPrestamo, 'devolver')} />
-                        )}
-                      </div>
+                    <td className="px-4 py-4 text-right space-x-2 whitespace-nowrap">
+                      {p.estado === 'Pendiente' && (
+                        <>
+                          <button onClick={() => setConfirmAction({ id: p.idPrestamo, action: 'aprobar', message: '¿Aprobar este préstamo?' })} disabled={actionLoading} className="rounded bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-blue-700">Aprobar</button>
+                          <button onClick={() => setConfirmAction({ id: p.idPrestamo, action: 'cancelar', message: '¿Cancelar esta solicitud?' })} disabled={actionLoading} className="rounded bg-red-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-red-700">Cancelar</button>
+                        </>
+                      )}
+                      {p.estado === 'Aprobado' && (
+                        <button onClick={() => setConfirmAction({ id: p.idPrestamo, action: 'entregar', message: '¿Marcar equipo como entregado al usuario?' })} disabled={actionLoading} className="rounded bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-indigo-700">Marcar Entregado</button>
+                      )}
+                      {p.estado === 'Entregado' && (
+                        <button onClick={() => setConfirmAction({ id: p.idPrestamo, action: 'devolver', message: '¿Confirmas la devolución del equipo al inventario?' })} disabled={actionLoading} className="rounded bg-green-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-green-700">Registrar Devolución</button>
+                      )}
                     </td>
                   </tr>
                 ))
               )}
             </tbody>
           </table>
+          <Pagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            onPageChange={setCurrentPage}
+          />
         </div>
       )}
 
@@ -301,40 +325,52 @@ export default function PrestamosPage() {
             <div className="space-y-5">
               <div>
                 <label className="mb-1.5 block text-xs font-semibold text-gray-700 uppercase tracking-wider">Usuario Solicitante *</label>
-                <select
-                  value={formSolicitante}
-                  onChange={(e) => setFormSolicitante(e.target.value)}
-                  className="w-full h-10 rounded-xl border bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-red-200 transition-all"
-                >
-                  <option value="">Selecciona al solicitante...</option>
-                  {usuariosList.map((u) => (
-                    <option key={u.id_usuario} value={u.id_usuario}>
-                      {u.nombres} {u.apellidos} - {u.cedula}
-                    </option>
-                  ))}
-                </select>
+                <SearchableSelect
+                  options={usuariosList.map(u => ({ value: u.id_usuario, label: `${u.nombres} ${u.apellidos} - ${u.cedula}` }))}
+                  value={formSolicitante ? Number(formSolicitante) : ''}
+                  onChange={(val) => setFormSolicitante(val.toString())}
+                  placeholder="Busca por nombre o cédula..."
+                />
               </div>
 
               <div>
-                <label className="mb-1.5 block text-xs font-semibold text-gray-700 uppercase tracking-wider">Equipos a prestar *</label>
-                {/* Nuevo selector de Checkboxes en lugar del select multiple */}
+                <div className="flex justify-between items-center mb-1.5">
+                  <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider">Equipos a prestar *</label>
+                  <select
+                    value={filtroCategoriaForm}
+                    onChange={(e) => setFiltroCategoriaForm(e.target.value ? Number(e.target.value) : '')}
+                    className="h-7 text-xs rounded border bg-white px-2 outline-none focus:ring-1 focus:ring-red-200"
+                  >
+                    <option value="">Todas las categorías</option>
+                    {categorias.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+                  </select>
+                </div>
                 <div className="max-h-52 overflow-y-auto rounded-xl border p-2 space-y-1 bg-gray-50 focus-within:ring-2 focus-within:ring-red-200 transition-all">
-                  {articulos.map((a) => (
-                    <label key={a.id_articulo} className="flex items-center gap-3 rounded-lg hover:bg-gray-200/50 p-2 cursor-pointer transition-colors">
-                      <input
-                        type="checkbox"
-                        checked={formArticulos.includes(a.id_articulo)}
-                        onChange={() => handleArticuloToggle(a.id_articulo)}
-                        className="h-4 w-4 rounded border-gray-300 text-red-600 focus:ring-red-600"
-                      />
-                      <div className="flex flex-col">
-                        <span className="text-sm font-medium text-gray-800">{a.nombre}</span>
-                        <span className="text-xs font-mono text-gray-500">{a.codigo_institucional}</span>
-                      </div>
-                    </label>
-                  ))}
-                  {articulos.length === 0 && (
-                    <p className="text-sm text-gray-500 text-center py-4">No hay equipos disponibles para prestar.</p>
+                  {articulos.filter(a => filtroCategoriaForm === '' || a.id_categoria === filtroCategoriaForm).map((a) => {
+                    const isDisponible = a.id_estado_articulo === 1;
+                    return (
+                      <label key={a.id_articulo} className={`flex items-center gap-3 rounded-lg p-2 transition-colors ${isDisponible ? 'hover:bg-gray-200/50 cursor-pointer' : 'opacity-60 bg-gray-100 cursor-not-allowed'}`}>
+                        <input
+                          type="checkbox"
+                          disabled={!isDisponible}
+                          checked={formArticulos.includes(a.id_articulo)}
+                          onChange={() => handleArticuloToggle(a.id_articulo)}
+                          className="h-4 w-4 rounded border-gray-300 text-red-600 focus:ring-red-600 disabled:opacity-50"
+                        />
+                        <div className="flex flex-col flex-1">
+                          <span className="text-sm font-medium text-gray-800">{a.nombre}</span>
+                          <span className="text-xs font-mono text-gray-500">{a.codigo_institucional}</span>
+                        </div>
+                        {!isDisponible && (
+                          <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${a.id_estado_articulo === 3 ? 'bg-orange-100 text-orange-700' : 'bg-red-100 text-red-700'}`}>
+                            {a.id_estado_articulo === 3 ? 'Mantenimiento' : 'Prestado'}
+                          </span>
+                        )}
+                      </label>
+                    );
+                  })}
+                  {articulos.filter(a => filtroCategoriaForm === '' || a.id_categoria === filtroCategoriaForm).length === 0 && (
+                    <p className="text-sm text-gray-500 text-center py-4">No hay equipos en esta categoría.</p>
                   )}
                 </div>
                 <p className="mt-1.5 text-xs text-gray-400">Puedes seleccionar múltiples equipos activando las casillas.</p>
@@ -344,7 +380,7 @@ export default function PrestamosPage() {
                 <label className="mb-1.5 block text-xs font-semibold text-gray-700 uppercase tracking-wider">Fecha prevista de devolución</label>
                 <input
                   type="date"
-                  min={todayDate} // Validación visual para no elegir fechas pasadas
+                  min={todayDate}
                   value={formFechaDevolucion}
                   onChange={(e) => setFormFechaDevolucion(e.target.value)}
                   className="w-full h-10 rounded-xl border px-3 text-sm outline-none focus:ring-2 focus:ring-red-200 transition-all"
@@ -376,6 +412,33 @@ export default function PrestamosPage() {
                 className="rounded-xl bg-red-600 px-5 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-red-700 disabled:opacity-60"
               >
                 {actionLoading ? 'Procesando...' : 'Confirmar Préstamo'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Confirmación */}
+      {confirmAction && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm transition-all animate-fade-in">
+          <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl text-center">
+            <h3 className="text-lg font-bold text-gray-900 mb-2">Confirmar Acción</h3>
+            <p className="text-sm text-gray-600 mb-6">{confirmAction.message}</p>
+            <div className="flex justify-center gap-3">
+              <button 
+                onClick={() => setConfirmAction(null)} 
+                className="rounded-xl px-4 py-2 text-sm font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 transition"
+              >
+                Cancelar
+              </button>
+              <button 
+                onClick={() => {
+                  void accion(confirmAction.id, confirmAction.action);
+                  setConfirmAction(null);
+                }} 
+                className="rounded-xl px-4 py-2 text-sm font-semibold text-white bg-red-600 hover:bg-red-700 transition shadow-sm"
+              >
+                Aceptar
               </button>
             </div>
           </div>

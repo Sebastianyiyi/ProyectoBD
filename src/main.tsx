@@ -5,6 +5,7 @@ import { MsalProvider } from '@azure/msal-react'
 import { msalInstance } from '@/lib/msalInstance'
 import { queryClient } from '@/lib/queryClient'
 import { useAuthStore } from '@/store/authStore'
+import { api } from '@/lib/api'
 import './index.css'
 import App from './App.tsx'
 
@@ -36,8 +37,19 @@ async function bootstrap() {
       }
 
       if (accessToken) {
+        let dbUser = null;
+        try {
+          // Obtener el usuario real de la base de datos usando el correo
+          const res = await api.get(`/usuarios/correo/${account.username}`);
+          if (res.data) {
+            dbUser = res.data;
+          }
+        } catch (err) {
+          console.warn('Usuario no encontrado en la base de datos. Usando mock local.', err);
+        }
+
         useAuthStore.getState().setAuth(
-          {
+          dbUser || {
             id_usuario: 0,
             cedula: '',
             nombres: account.name?.split(' ')[0] ?? '',

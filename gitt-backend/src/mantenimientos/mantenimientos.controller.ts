@@ -55,4 +55,14 @@ export class MantenimientosController {
   ) {
     return this.mantenimientosService.cerrar(id, dto);
   }
+
+  @Patch(':id/iniciar')
+  iniciar(@Param('id', ParseIntPipe) id: number) {
+    return this.mantenimientosService.iniciar(id);
+  }
+
+  @Patch(':id/cancelar')
+  cancelar(@Param('id', ParseIntPipe) id: number) {
+    return this.mantenimientosService.cancelar(id);
+  }
 }
